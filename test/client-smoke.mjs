@@ -127,7 +127,7 @@ for (const key of Object.keys(zh)) {
   assert.ok(Object.prototype.hasOwnProperty.call(en, key), 'en 应含 zh 全部键: ' + key)
 }
 ok('zh/en 键集合一致 (' + Object.keys(zh).length + ' 键)')
-for (const key of ['card.title', 'field.enabled', 'hint.enabled', 'field.skipTrivial', 'hint.skipTrivial', 'field.prompts', 'hint.prompts', 'prompt.add', 'prompt.delete', 'prompt.titlePlaceholder', 'prompt.textPlaceholder', 'group.general', 'group.prompts']) {
+for (const key of ['card.title', 'card.promptCount', 'field.enabled', 'hint.enabled', 'field.skipTrivial', 'hint.skipTrivial', 'field.prompts', 'hint.prompts', 'prompt.add', 'prompt.delete', 'prompt.titlePlaceholder', 'prompt.textPlaceholder', 'prompt.emptyBodyWarn', 'group.general', 'group.prompts']) {
   assert.ok(zh[key], 'zh 翻译键缺失: ' + key)
 }
 ok('关键翻译键齐全')

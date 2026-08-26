@@ -19,10 +19,14 @@ test('默认提示词：一条「图谱·Wiki 提醒」，含判断语义', () =
   }
 })
 
-test('normPrompts：非法输入兜底（非数组→默认；空数组→默认）', () => {
+test('normPrompts：非法输入兜底（非数组→默认；undefined→默认）', () => {
   assert.equal(normPrompts(undefined).length, 1)
   assert.equal(normPrompts('bad').length, 1)
-  assert.equal(normPrompts([]).length, 1)
+})
+
+test('normPrompts：显式空数组保持为空（用户删光=不再注入，2026-08-26 审计 P1 回归）', () => {
+  assert.deepEqual(normPrompts([]), [])
+  assert.deepEqual(normPrompts([null, 42, 'x']), [])
 })
 
 test('normPrompts：过滤非法条目、id 自动补、enabled 默认 true', () => {
@@ -46,6 +50,11 @@ test('makePromptMessage：notice 形态 + summary「上下文注入 <title>」',
   assert.equal(m.source.form, 'notice')
   assert.equal(m.source.summary, '上下文注入 图谱·Wiki 提醒')
   assert.equal(m.content[0].text, '正文')
+})
+
+test('makePromptMessage：空标题摘要回落「未命名」，无尾随空格（审计 P3）', () => {
+  const m = makePromptMessage({ id: 'b', title: '', text: '正文', enabled: true })
+  assert.equal(m.source.summary, '上下文注入 未命名')
 })
 
 test('shouldInject：freshUser 非琐碎 → 注入；琐碎按 skipTrivial 决定', () => {

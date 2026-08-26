@@ -2,7 +2,7 @@
  * dsh-prompt-injector — 通用每轮上下文注入插件（host 半）。
  *
  * 与 dsh-mem0-plugins 的注入机制同构（agent/pre-step → decision.messages 追加
- * form:'notice' 的 plugin-source 用户消息），但完全通用化：配置里每一条第
+ * form:'notice' 的 plugin-source 用户消息），但完全通用化：配置里每一条
  * enabled 提示词 → 每轮对话追加一条「上下文注入 <title>」notice 行。
  *
  * 配置（设置页可编辑，settings.yaml 用户层持久化）：
@@ -34,7 +34,8 @@ const Config = z.object({
   prompts: z.array(PromptSchema).default(DEFAULT_PROMPTS)
 })
 
-export const inject = ['settings', 'agents']
+// installSettingsSection 内部已自行 ctx.inject(['settings'])，此处只需 agents（backfill 枚举用）。
+export const inject = ['agents']
 
 export function apply(ctx, config = {}) {
   let current = () => config

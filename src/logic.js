@@ -20,7 +20,8 @@ export const DEFAULT_PROMPTS = [
   }
 ]
 
-/** 提示词列表防御性收敛（外部编辑 settings.yaml 时兜底）。 */
+/** 提示词列表防御性收敛（外部编辑 settings.yaml 时兜底）。
+ * 语义：未配置（非数组/undefined）→ 内置默认；显式空数组 → 空（用户删光=不再注入）。 */
 export function normPrompts(raw) {
   if (!Array.isArray(raw)) return DEFAULT_PROMPTS.slice()
   const out = []
@@ -33,7 +34,6 @@ export function normPrompts(raw) {
       enabled: p.enabled !== false
     })
   })
-  if (!out.length) return DEFAULT_PROMPTS.slice()
   return out
 }
 
@@ -91,7 +91,7 @@ export function makePromptMessage(prompt) {
       kind: 'plugin',
       plugin: 'dsh-prompt-injector',
       form: 'notice',
-      summary: '上下文注入 ' + prompt.title
+      summary: '上下文注入 ' + (prompt.title || '未命名')
     }
   }
 }
