@@ -1,54 +1,189 @@
 # dsh-prompt-injector
 
-**通用每轮上下文注入插件**：在设置页管理一组提示词（可开关、可增删改），每一轮对话开始时，把每条启用中的提示词以「上下文注入 <标题>」notice 行注入模型上下文——与 dsh-mem0-plugins 的 `[mem0 requirement]` 提醒同构的注入机制，但完全可配置化。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-green.svg)](package.json)
+[![Platform](https://img.shields.io/badge/platform/DeepSeek%20Harness-orange)](https://deepseek.com)
 
-## 为什么做
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-人设卡规则（"编码任务前消费图谱"、"事实问题先查 wiki"）只是文字约束，模型在长会话中会漏执行（2026-08-26 实测多次新会话仍不触发）。dsh-mem0-plugins 用 `agent/pre-step` 事件每轮注入提醒，效果可靠——本插件把同一机制**通用化**：任何纪律性提醒（记忆/图谱/wiki/安全红线/回复风格……）都能在 UI 上添加，不用为每条规则写一个插件。
+Generic **per-turn context injection** for the
+[DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) web
+profile. Manage a list of prompts in the settings page; every conversation
+round injects each enabled prompt into the model context as a compact
+"Context injection — &lt;title&gt;" notice line — the exact mechanism used by
+memory plugins, made reusable for any rule you want the model to actually
+follow.
 
-典型用法：内置默认提示词「图谱·Wiki 提醒」（编码任务消费图谱 + 事实问题先查 wiki，**明确"不是每轮都要查、按情况决定"**——纯闲聊/算术跳过，不确定时宁可查一次）。
-
-## 能力
-
-- **每轮注入**：`agent/pre-step` 事件，有新的真人输入（且非琐碎、或关闭琐碎过滤）时，向本轮上下文追加**所有启用中的提示词**，每条一条 `form:'notice'` 消息，UI 折叠行直接可见「上下文注入 <标题>」。
-- **设置页管理**（设置 → 插件 → 上下文注入）：
-  - 总开关 `enabled`（开/关）
-  - `skipTrivial` 琐碎轮跳过（好的/嗯/收到/继续…不注入，避免打扰；"继续帮我看看那个报错"这类实义输入照常注入）
-  - 提示词列表：每条含标题 + 正文 + 行开关 + 删除；底部「＋ 添加提示词」随时新增
-- **只提醒、不执行**：插件不调用任何图谱/wiki 命令，判断权在模型。提示词正文应写清楚"什么情况要执行、什么情况跳过"。
-- **零侵入**：不改 dsh 源码；host 逻辑零额外依赖（纯逻辑在 `src/logic.js`），client 设置卡与 mem0 同契约。
-
-## 配置
-
-- 默认 `enabled: true`、`skipTrivial: true`、内置一条「图谱·Wiki 提醒」。
-- 设置页用户层保存优先；也可直接在 `~/.dsh/profiles/web/cordis.patch.yml` 覆盖（见 `cordis.patch.yml` 注释）。
-
-## 安装（发哥执行）
-
-```bash
-dsh plugin --profile web add /data/dsh-workspace/dsh-prompt-injector
-# 重启 dsh
+```text
+[context injection] 图谱·Wiki 提醒    ← one notice line per enabled prompt,
+[context injection] 回复结构 1-2-3     ← every round, right before the model
+[context injection] 安全红线清单       ← plans its answer
 ```
 
-卸载：`dsh plugin --profile web remove dsh-prompt-injector`
+> [!IMPORTANT]
+> **Design intent.** The plugin *reminds*, it never *executes*: it calls no
+> tools and checks nothing itself. A good prompt writes down **when to check**,
+> **when to skip**, and what to run — the model still decides per round. See
+> [Writing good prompts](#writing-good-prompts).
 
-> 取代说明：早先的 `dsh-graph-wiki-alert`（单用途静态提醒）已被本插件取代——内置默认提示词即其文本，且可增删改。已装 graph-wiki-alert 的可用本插件替换。
+It ships as a standard dsh bundle plugin: `dsh plugin add` to install,
+`dsh plugin remove` to uninstall. It changes no dsh source code.
 
-## 验收路径（安装重启后）
+---
 
-1. 新开会话发有实质内容的话 → 出现一行折叠的「上下文注入 图谱·Wiki 提醒」。
-2. 设置页新增一条提示词（如"回答前先列 1-2-3 结构"）→ 保存 → 后续每轮多一行「上下文注入 <新标题>」。
-3. 发「好的」「继续」→ 不出现提醒（琐碎过滤）。
-4. 单测：`node --test test/smoke.mjs`（host 6 项）+ `node test/client-smoke.mjs`（client 7 项）。
+## Table of Contents
 
-## 实现
+- [Why](#why)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Writing good prompts](#writing-good-prompts)
+- [Development & testing](#development--testing)
+- [License](#license)
 
-- `src/index.js`：Config（schemastery）+ `installSettingsSection` 设置注册 + `agent/pre-step` 注入 + `agent/created`/backfill 挂载（WeakSet 幂等，同 dsh-mem0-plugins installAgentHooks 模式）。
-- `src/logic.js`：纯逻辑零依赖（默认提示词 / normPrompts 收敛 / isTrivialPrompt / makePromptMessage / shouldInject），便于单测。
-- `lib/client.js`：设置卡（总开关 + 琐碎过滤开关 + 提示词列表编辑器），slot/翻译/样式对齐 mem0 卡（`PInj_` 前缀防冲突）。
-- `test/`：host 单测 + client bundle 结构/渲染测试。
+## Why
 
-## 相关
+Rules written only in the persona/system layer are unreliable: models reliably
+lose track of them in long sessions, even when the rules are explicit
+("refresh the code graph before coding", "check the wiki first for factual
+questions" — measured to silently not happen session after session).
 
-- 注入机制同构参考：dsh-mem0-plugins（agent/pre-step + form:'notice'）
-- 默认提示词涉及的通道：crg-mcp.service（5555）/ graphify-mcp.service（5566）/ gbrain-mcp.service（3131 + gmcp）——见 `code-review-graph-ops`、`gbrain-query` 技能
+Per-round injection, on the other hand, reaches the model's context **every
+turn** and is rendered as a visible notice line in the UI (collapsed summary
+readable at a glance). This is the mechanism dsh-mem0-plugins uses for its
+memory-recall reminder — this plugin generalizes it: instead of writing a new
+plugin for every discipline (memory, code graphs, wiki lookup, safety
+redlines, reply style…), add a prompt in the settings page.
+
+## Features
+
+| Capability | Behavior |
+|---|---|
+| **Per-round injection** | On `agent/pre-step`, when the round carries fresh user input, every enabled prompt is appended to this round's context as a `form:'notice'` plugin-source message — one "Context injection" line each. |
+| **Master switch** | `enabled` turns injection on/off globally (settings page or config). |
+| **Trivial-round filtering** | `skipTrivial` (default on) skips brief acknowledgements/greetings/continuations (好的/嗯/收到/继续/ok/thanks…), so reminders don't nag; substantive input (e.g. "继续帮我看看那个报错") still gets them. |
+| **Prompt management UI** | Add / delete / edit prompts, per-row enable switch, per-row title + body, all in the settings page. |
+| **Remind only, never execute** | The plugin calls no tools and runs no checks; judgment stays with the model. |
+| **Zero intrusion** | No dsh source changes; host logic has zero runtime dependencies; standard bundle install/uninstall. |
+
+## How it works
+
+- **Injection point**: `agent/pre-step` → the plugin appends to
+  `decision.messages` (same hook chain as dsh-mem0-plugins). One message per
+  enabled prompt, `role: user`, `source: { kind: 'plugin', form: 'notice',
+  summary: 'Context injection — <title>' }` — the UI renders it as a collapsed
+  notice line whose summary is visible without expanding.
+- **Hooking**: listens to `agent/created` for new agents and backfills
+  pre-existing agents at apply time (a `WeakSet` guards against double
+  registration).
+- **Trivial detection**: acknowledgement/greeting/continuation lexicon
+  (ported from dsh-mem0-plugins, itself from hermes `is_trivial_prompt`,
+  MIT) + slash-command pattern; input carrying real content is never
+  miscategorized.
+- **Persistence**: prompts live in the dsh settings store (user layer),
+  editable in the settings page, saving immediately without a restart.
+
+## Requirements
+
+- DeepSeek Harness (dsh) web profile, Node ≥ 22.
+- The prompts you write may reference your own tooling (code graph services,
+  wiki search commands, …) — those are just text; nothing is executed by the
+  plugin.
+
+## Installation
+
+```bash
+dsh plugin --profile web add /path/to/dsh-prompt-injector
+# restart dsh
+```
+
+Uninstall: `dsh plugin --profile web remove dsh-prompt-injector`
+
+After restart, open Settings → Plugins → "Context injection" to manage prompts.
+
+## Configuration
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Master switch. |
+| `skipTrivial` | boolean | `true` | Skip trivial rounds (ack/greeting/continuation). |
+| `prompts` | array | built-in default | Prompt list: `[{ id, title, text, enabled }]`. |
+
+The settings page edits these; the user layer wins over the composition
+defaults. To override via the profile patch:
+
+```yaml
+# ~/.dsh/profiles/web/cordis.patch.yml
+- insert:
+    - id: prompt-injector
+      name: dsh-prompt-injector
+      config:
+        enabled: true
+        skipTrivial: true
+        prompts:
+          - id: my-rule
+            title: My rule
+            text: |
+              [my-rule] Before answering, judge: does this round need it?
+              ...
+            enabled: true
+```
+
+### Built-in default prompt
+
+On a fresh install the plugin ships with one prompt, "图谱·Wiki 提醒" (code
+graph + wiki reminder), which demonstrates the intended "judge first" style:
+
+```text
+[graph-wiki requirement] 本轮开始，先判断是否需要查图谱/Wiki，再决定是否执行——不是每轮都要查：
+① 编码任务（本轮要改代码）→ 消费图谱：目标仓库先 `code-review-graph update` 刷新（无图谱则自动建库），然后 `crg search/impact/stats` 查询（多仓库自动发现：--repo <别名|路径> > 当前目录 .git 根 > 兜底 mem0_falkordb；`crg xsearch` 全仓搜索），深层结构用 graphify 查询（graphify-mcp 5566）。只改文档/纯叙述/无代码改动则跳过刷新。
+② 技术事实类问题（版本/行为/配置/术语/流程步骤）→ 先 `gmcp search '{"query":"..."}'` 查 wiki（score≥0.45 取前 3 页，读页后再答，标注 [[wikilink]] 来源）。
+③ 纯闲聊、纯算术、无事实成分的简单操作 → 跳过，直接回答。
+若不确定属于哪类：宁可查一次（gmcp 或 crg 成本低），不要凭记忆给过时答案。
+```
+
+The commands referenced (`crg`, `graphify`, `gmcp`) belong to this
+deployment's own graph/wiki tooling — replace them with whatever your
+environment actually has (or remove the prompt entirely; the list is fully
+editable).
+
+## Writing good prompts
+
+The plugin's value comes from *how* you phrase each prompt. Advice that
+worked in practice:
+
+1. **State the judgment condition, not just the action.** "Before coding,
+   refresh the graph" alone will over-trigger; add the skip branch: "…unless
+   this round only touches docs/narration".
+2. **Explicitly allow skipping.** Rounds without factual content or code work
+   should be told "just answer directly" — otherwise a mandatory-sounding
+   prompt burns tokens and attention every round.
+3. **Give a fallback for uncertainty.** "If unsure which category, one lookup
+   is cheap — don't answer from stale memory."
+4. **Keep it short.** One screen or less per prompt; a wall of text gets
+   skimmed, not followed.
+5. **Consider frequency.** Every enabled prompt is injected **every** round.
+   If a rule is only relevant to a specific task type, that's fine (the model
+   filters by the judgment text) — but don't stack many long prompts.
+
+## Development & testing
+
+```bash
+node --test test/smoke.mjs        # host logic: defaults, normalization, injection decision
+node test/client-smoke.mjs        # client bundle: slot contract, locale, card rendering
+```
+
+Layout:
+
+- `src/index.js` — plugin entry: `installSettingsSection` + `agent/pre-step`
+  injection + agent hooks/backfill.
+- `src/logic.js` — zero-dependency pure logic (defaults, `normPrompts`,
+  `isTrivialPrompt`, `makePromptMessage`, `shouldInject`).
+- `lib/client.js` — settings card (master switch + trivial toggle + prompt
+  list editor), `PInj_` prefixed styles.
+
+## License
+
+[MIT](LICENSE)
