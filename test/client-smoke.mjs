@@ -230,4 +230,36 @@ scopeStub.set = originalSet
 payload.discard()
 ok('discard 与保存失败路径正确')
 
+console.log('== 交互回归（2026-08-27 真机缺陷修复）==')
+// 0. 恢复一行数据（前序「删光保存」测试把 value.prompts 置空）
+scopeState.value = Object.assign({}, scopeState.value, { prompts: [{ id: 'g1', title: '图谱·Wiki 提醒', text: '正文', enabled: true }] })
+scopeListeners.forEach((fn) => fn())
+// 1. 添加按钮：新空行必须保留（parseFieldValue 不过滤空行）
+const before = snap().prompts.stagedList.length
+payload.edit('prompts', snap().prompts.stagedList.concat([{ id: 'new1', title: '', text: '', enabled: true }]))
+assert.equal(snap().prompts.stagedList.length, before + 1, '添加空行后 stagedList 应 +1（空行保留等待填写）')
+assert.equal(snap().prompts.stagedList[before].text, '', '新行正文为空')
+payload.discard()
+// 2. FieldRow checkbox：可写态不禁用、只读态禁用（props.writable 必须真实传递）
+function collectCheckboxDisabled(node, out) {
+  if (node === null || node === undefined) return
+  if (node.props && node.props.type === 'checkbox') out.push(node.props.disabled === true)
+  if (typeof node.type === 'function') { collectCheckboxDisabled(node.type(node.props), out); return }
+  for (const child of node.children || []) collectCheckboxDisabled(child, out)
+}
+const writableFlags = []
+collectCheckboxDisabled(jsxStub(CardWithHooks, { t: (k) => zh[k] || k }), writableFlags)
+console.log('CHECKBOX COUNT:', writableFlags.length, JSON.stringify(writableFlags))
+assert.ok(writableFlags.length >= 3, '渲染树应有 ≥3 个 checkbox（2 个开关 + 行开关）')
+assert.ok(writableFlags.every((d) => d === false), '可写态下所有 checkbox 不应禁用（回归：FieldRow 曾缺 writable prop 恒禁用）')
+const savedWritable2 = scopeState.writable
+scopeState.writable = false
+scopeListeners.forEach((fn) => fn())
+const roFlags = []
+collectCheckboxDisabled(jsxStub(CardWithHooks, { t: (k) => zh[k] || k }), roFlags)
+assert.ok(roFlags.every((d) => d === true), '只读态下所有 checkbox 应禁用')
+scopeState.writable = savedWritable2
+scopeListeners.forEach((fn) => fn())
+ok('checkbox disabled 绑定与添加空行保留正确')
+
 console.log('\n全部通过: ' + PASS.length + ' 项')
