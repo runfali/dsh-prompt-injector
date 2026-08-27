@@ -87,6 +87,8 @@ redlines, reply style…), add a prompt in the settings page.
 - **Persistence**: prompts live in the dsh settings store (user layer),
   editable in the settings page, saving immediately without a restart.
 
+![Injection in action — one expanded notice row per enabled prompt](docs/screenshot/Plugin_Presentation_Mode.png)
+
 ## Requirements
 
 - DeepSeek Harness (dsh) web profile, Node ≥ 22.
@@ -106,6 +108,8 @@ Uninstall: `dsh plugin --profile web remove dsh-prompt-injector`
 After restart, open Settings → Plugins → "Context injection" to manage prompts.
 
 ## Configuration
+
+![Settings card — master switch, trivial-round filter, editable prompt list](docs/screenshot/Plugin_Configuration_Page.png)
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|

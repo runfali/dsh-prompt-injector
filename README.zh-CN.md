@@ -59,6 +59,8 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 - **琐碎判定**：问候/确认/继续词表（移植自 dsh-mem0-plugins，其源头为 hermes `is_trivial_prompt`，MIT）+ 斜杠命令形态；带真实内容的输入绝不误判。
 - **持久化**：提示词存 dsh 设置存储（用户层），设置页即改即存，无需重启。
 
+![注入效果——每条启用提示词的展开提醒行](docs/screenshot/Plugin_Presentation_Mode.png)
+
 ## 环境要求
 
 - DeepSeek Harness (dsh) web profile，Node ≥ 22。
@@ -76,6 +78,8 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 重启后到 设置 → 插件 →「上下文注入」管理提示词。
 
 ## 配置
+
+![设置卡——总开关、琐碎轮过滤、可编辑提示词列表](docs/screenshot/Plugin_Configuration_Page.png)
 
 | 键 | 类型 | 默认 | 含义 |
 |---|---|---|---|
