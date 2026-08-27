@@ -66,7 +66,7 @@ redlines, reply style…), add a prompt in the settings page.
 | **Trivial-round filtering** | `skipTrivial` (default on) skips brief acknowledgements/greetings/continuations (好的/嗯/收到/继续/ok/thanks…), so reminders don't nag; substantive input (e.g. "继续帮我看看那个报错") still gets them. |
 | **Prompt management UI** | Add / delete / edit prompts, per-row enable switch, per-row title + body, all in the settings page. |
 | **Remind only, never execute** | The plugin calls no tools and runs no checks; judgment stays with the model. |
-| **Zero intrusion** | No dsh source changes; host logic has zero runtime dependencies; standard bundle install/uninstall. |
+| **Zero intrusion** | No dsh source changes; only two small runtime deps (`@deepseek-ai/dsh-settings`, `@deepseek-ai/schemastery`); standard bundle install/uninstall. |
 
 ## How it works
 

@@ -98,8 +98,19 @@ const scopeStub = {
   bind({ namespace }) { boundNamespace = namespace; return scopeStub },
   getSnapshot: () => scopeState,
   subscribe(fn) { scopeListeners.add(fn); return () => scopeListeners.delete(fn); },
-  set: async (key, value) => { scopeState.user[key] = value; scopeListeners.forEach((fn) => fn()); return true },
-  unset: async (key) => { delete scopeState.user[key]; scopeListeners.forEach((fn) => fn()); return true }
+  set: async (key, value) => {
+    scopeState.user[key] = value
+    scopeState.value = Object.assign({}, scopeState.value, { [key]: value })
+    scopeListeners.forEach((fn) => fn())
+    return true
+  },
+  unset: async (key) => {
+    delete scopeState.user[key]
+    scopeState.value = Object.assign({}, scopeState.value)
+    delete scopeState.value[key]
+    scopeListeners.forEach((fn) => fn())
+    return true
+  }
 }
 let slotEntry = null
 const slotsStub = {
@@ -201,5 +212,22 @@ assert.ok(disabledCount >= 5, '只读态下编辑控件应禁用（含添加/删
 scopeState.writable = savedWritable
 scopeListeners.forEach((fn) => fn())
 ok('只读态控件全部禁用 (' + disabledCount + ' 处)')
+
+console.log('== discard / 保存失败路径（2026-08-26 第三轮审计固化）==')
+payload.edit('prompts', snap().prompts.stagedList.concat([{ id: 'y1', title: '待放弃', text: 'x', enabled: true }]))
+assert.equal(snap().shell.dirty, true, '编辑后脏')
+payload.discard()
+assert.equal(snap().shell.dirty, false, 'discard 后不脏')
+assert.equal(snap().prompts.stagedList.length, 0, 'discard 后 staged 清空（当前 user 层为空数组）')
+// 保存失败路径：让 scope.set 返回 false → failed 显示
+const originalSet = scopeStub.set
+scopeStub.set = async () => false
+payload.edit('enabled', false)
+await payload.save()
+assert.equal(snap().shell.failed, true, '保存失败标记 failed')
+assert.equal(snap().shell.dirty, true, '失败后暂存保留（可重试/放弃）')
+scopeStub.set = originalSet
+payload.discard()
+ok('discard 与保存失败路径正确')
 
 console.log('\n全部通过: ' + PASS.length + ' 项')
