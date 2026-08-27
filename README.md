@@ -10,14 +10,16 @@ Generic **per-turn context injection** for the
 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) web
 profile. Manage a list of prompts in the settings page; every conversation
 round injects each enabled prompt into the model context as a compact
-"Context injection — &lt;title&gt;" notice line — the exact mechanism used by
+collapsed "Context injection" notice line (the leading label and the plugin
+name are added by the UI; the row title is your prompt title) — the exact
+mechanism used by
 memory plugins, made reusable for any rule you want the model to actually
 follow.
 
 ```text
-[context injection] 图谱·Wiki 提醒    ← one notice line per enabled prompt,
-[context injection] 回复结构 1-2-3     ← every round, right before the model
-[context injection] 安全红线清单       ← plans its answer
+[context injection | dsh-prompt-injector] 图谱·Wiki 提醒  ← one notice line per enabled prompt,
+[context injection | dsh-prompt-injector] 回复结构 1-2-3   ← every round, right before the model
+[context injection | dsh-prompt-injector] 安全红线清单     ← plans its answer
 ```
 
 > [!IMPORTANT]
@@ -73,7 +75,7 @@ redlines, reply style…), add a prompt in the settings page.
 - **Injection point**: `agent/pre-step` → the plugin appends to
   `decision.messages` (same hook chain as dsh-mem0-plugins). One message per
   enabled prompt, `role: user`, `source: { kind: 'plugin', form: 'notice',
-  summary: 'Context injection — <title>' }` — the UI renders it as a collapsed
+  summary: '<title>' }` — the UI renders it as a collapsed
   notice line whose summary is visible without expanding.
 - **Hooking**: listens to `agent/created` for new agents and backfills
   pre-existing agents at apply time (a `WeakSet` guards against double

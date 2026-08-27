@@ -3,7 +3,8 @@
  *
  * 与 dsh-mem0-plugins 的注入机制同构（agent/pre-step → decision.messages 追加
  * form:'notice' 的 plugin-source 用户消息），但完全通用化：配置里每一条
- * enabled 提示词 → 每轮对话追加一条「上下文注入 <title>」notice 行。
+ * enabled 提示词 → 每轮对话追加一条 notice 行（summary 即标题，UI 自动加
+ * 「上下文注入」前缀与插件名）。
  *
  * 配置（设置页可编辑，settings.yaml 用户层持久化）：
  *   enabled      —— 总开关

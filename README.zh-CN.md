@@ -7,12 +7,12 @@
 [English](README.md) | 简体中文
 
 面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness)
-web profile 的**通用每轮上下文注入插件**。在设置页维护一份提示词清单，每一轮对话开始时，把每条启用中的提示词以一行紧凑的「上下文注入 &lt;标题&gt;」notice 提醒注入模型上下文——记忆插件所用的同款注入机制，改为可配置复用：任何想约束模型执行的纪律，都能加一条提示词，不必为每条规则单独写插件。
+web profile 的**通用每轮上下文注入插件**。在设置页维护一份提示词清单，每一轮对话开始时，把每条启用中的提示词以一行紧凑的折叠提醒注入模型上下文（行首「上下文注入」前缀由界面自动添加，行标题即你的提示词标题）——记忆插件所用的同款注入机制，改为可配置复用：任何想约束模型执行的纪律，都能加一条提示词，不必为每条规则单独写插件。
 
 ```text
-[上下文注入] 图谱·Wiki 提醒    ← 每条启用提示词一行，
-[上下文注入] 回复结构 1-2-3     ← 每轮开跑前进入模型上下文，
-[上下文注入] 安全红线清单       ← 折叠即见摘要
+[上下文注入 | dsh-prompt-injector] 图谱·Wiki 提醒  ← 每条启用提示词一行，
+[上下文注入 | dsh-prompt-injector] 回复结构 1-2-3   ← 「上下文注入」前缀与插件名
+[上下文注入 | dsh-prompt-injector] 安全红线清单     ← 由界面自动添加，行标题即摘要
 ```
 
 > [!IMPORTANT]
@@ -54,7 +54,7 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 
 ## 工作原理
 
-- **注入点**：`agent/pre-step` → 向 `decision.messages` 追加（与 dsh-mem0-plugins 同一钩子链）。每条启用提示词一条消息，`role: user`，`source: { kind: 'plugin', form: 'notice', summary: '上下文注入 <标题>' }`——UI 折叠显示、摘要无需展开即见。
+- **注入点**：`agent/pre-step` → 向 `decision.messages` 追加（与 dsh-mem0-plugins 同一钩子链）。每条启用提示词一条消息，`role: user`，`source: { kind: 'plugin', form: 'notice', summary: '<标题>' }`——UI 折叠显示为「上下文注入 | 插件名 | 标题」，摘要无需展开即见。
 - **挂载**：监听 `agent/created` 覆盖新 agent，插件启动时 backfill 已有 agent（`WeakSet` 幂等防双触发）。
 - **琐碎判定**：问候/确认/继续词表（移植自 dsh-mem0-plugins，其源头为 hermes `is_trivial_prompt`，MIT）+ 斜杠命令形态；带真实内容的输入绝不误判。
 - **持久化**：提示词存 dsh 设置存储（用户层），设置页即改即存，无需重启。
