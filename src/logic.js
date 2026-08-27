@@ -81,7 +81,10 @@ function genId() {
     : 'pi-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
 }
 
-/** 单条提示词 → notice 消息（summary = 「上下文注入 <title>」）。 */
+/** 单条提示词 → notice 消息。
+ * summary 只放标题（不带「上下文注入」前缀）：UI 渲染 ContextInjectionRow 时
+ * 自动拼「上下文注入 | <插件名> | <summary>」——手动加前缀会重复
+ * （2026-08-27 发哥实测反馈）。 */
 export function makePromptMessage(prompt) {
   return {
     id: genId(),
@@ -91,7 +94,7 @@ export function makePromptMessage(prompt) {
       kind: 'plugin',
       plugin: 'dsh-prompt-injector',
       form: 'notice',
-      summary: '上下文注入 ' + (prompt.title || '未命名')
+      summary: prompt.title || '未命名'
     }
   }
 }

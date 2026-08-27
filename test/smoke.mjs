@@ -1,7 +1,7 @@
 /**
  * dsh-prompt-injector host logic tests (node --test)
  * 覆盖：默认提示词要素、normPrompts 归一化兜底、makePromptMessage 形态
- * （form:'notice' + summary「上下文注入 xxx」）、shouldInject 决策。
+ * （form:'notice' + summary 纯标题，UI 自动加前缀）、shouldInject 决策。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -42,19 +42,19 @@ test('normPrompts：过滤非法条目、id 自动补、enabled 默认 true', ()
   assert.equal(out[1].enabled, false)
 })
 
-test('makePromptMessage：notice 形态 + summary「上下文注入 <title>」', () => {
+test('makePromptMessage：notice 形态 + summary 纯标题（UI 自动加「上下文注入」前缀，2026-08-27 反馈）', () => {
   const m = makePromptMessage({ id: 'a', title: '图谱·Wiki 提醒', text: '正文', enabled: true })
   assert.equal(m.role, 'user')
   assert.equal(m.source.kind, 'plugin')
   assert.equal(m.source.plugin, 'dsh-prompt-injector')
   assert.equal(m.source.form, 'notice')
-  assert.equal(m.source.summary, '上下文注入 图谱·Wiki 提醒')
+  assert.equal(m.source.summary, '图谱·Wiki 提醒')
   assert.equal(m.content[0].text, '正文')
 })
 
 test('makePromptMessage：空标题摘要回落「未命名」，无尾随空格（审计 P3）', () => {
   const m = makePromptMessage({ id: 'b', title: '', text: '正文', enabled: true })
-  assert.equal(m.source.summary, '上下文注入 未命名')
+  assert.equal(m.source.summary, '未命名')
 })
 
 test('shouldInject：freshUser 非琐碎 → 注入；琐碎按 skipTrivial 决定', () => {

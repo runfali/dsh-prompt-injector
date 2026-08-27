@@ -80,7 +80,7 @@ test('pre-step 端到端注入：freshUser 轮追加一条 notice；工具步/�
   const out1 = await run({ messages: [{ source: { kind: 'user' }, content: [{ type: 'text', text: '帮我改代码' }] }] })
   assert.equal(out1.messages.length, 2, '注入 1 条 notice')
   assert.equal(out1.messages[1].source.form, 'notice')
-  assert.equal(out1.messages[1].source.summary, '上下文注入 提醒A')
+  assert.equal(out1.messages[1].source.summary, '提醒A')
   // 2. 工具回执步 → 不注入
   const out2 = await run({ messages: [{ source: { kind: 'tool' }, content: [{ type: 'text', text: '回执' }] }] })
   assert.equal(out2.messages.length, 1)
