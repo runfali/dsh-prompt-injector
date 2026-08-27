@@ -98,8 +98,8 @@ const scopeStub = {
   bind({ namespace }) { boundNamespace = namespace; return scopeStub },
   getSnapshot: () => scopeState,
   subscribe(fn) { scopeListeners.add(fn); return () => scopeListeners.delete(fn); },
-  set: async (key, value) => { scopeState.user[key] = value; return true },
-  unset: async (key) => { delete scopeState.user[key]; return true }
+  set: async (key, value) => { scopeState.user[key] = value; scopeListeners.forEach((fn) => fn()); return true },
+  unset: async (key) => { delete scopeState.user[key]; scopeListeners.forEach((fn) => fn()); return true }
 }
 let slotEntry = null
 const slotsStub = {
@@ -170,5 +170,36 @@ for (const needle of ['上下文注入（通用提示词）', '启用注入', '�
   assert.ok(joined.includes(needle), '渲染文案应含: ' + needle)
 }
 ok('卡片渲染包含全部控件文案（含提示词行与添加按钮）')
+
+console.log('== form 保存链路（2026-08-26 第二轮审计固化）==')
+const snap = () => payload.hooks.promptInjector.getSnapshot()
+assert.equal(snap().shell.dirty, false, '初始不脏')
+payload.edit('prompts', snap().prompts.stagedList.concat([{ id: 'x1', title: '新条', text: '内容', enabled: true }]))
+assert.equal(snap().shell.dirty, true, '添加后脏')
+await payload.save()
+assert.equal(scopeState.user.prompts.length, 2, '保存落盘 user 层')
+assert.equal(snap().shell.dirty, false, '保存后不脏')
+payload.edit('prompts', [])
+await payload.save()
+assert.deepEqual(scopeState.user.prompts, [], '删光保存为空数组（host normPrompts 语义配套）')
+ok('添加→保存→删光→空数组全链路正确')
+
+console.log('== 只读态禁用 ==')
+const savedWritable = scopeState.writable
+scopeState.writable = false
+scopeListeners.forEach((fn) => fn())
+const readOnlyTree = jsxStub(CardWithHooks, { t: (k) => zh[k] || k })
+let disabledCount = 0
+function countDisabled(node) {
+  if (node === null || node === undefined) return
+  if (node.props && node.props.disabled === true) disabledCount += 1
+  if (typeof node.type === 'function') { countDisabled(node.type(node.props)); return }
+  for (const child of node.children || []) countDisabled(child)
+}
+countDisabled(readOnlyTree)
+assert.ok(disabledCount >= 5, '只读态下编辑控件应禁用（含添加/删除/输入）')
+scopeState.writable = savedWritable
+scopeListeners.forEach((fn) => fn())
+ok('只读态控件全部禁用 (' + disabledCount + ' 处)')
 
 console.log('\n全部通过: ' + PASS.length + ' 项')

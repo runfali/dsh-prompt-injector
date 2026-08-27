@@ -15,7 +15,7 @@
  * 只提醒、不执行：插件不调用任何图谱/wiki 命令，判断权在模型。
  */
 
-import { z } from '@deepseek-ai/schemastery'
+import z from '@deepseek-ai/schemastery'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { DEFAULT_PROMPTS, normPrompts, shouldInject, makePromptMessage } from './logic.js'
 
@@ -65,8 +65,17 @@ export function apply(ctx, config = {}) {
     hookedAgents.add(agent)
 
     agent.ctx.on('agent/pre-step', async (payload, next) => {
+      // 第一阶段：执行下游链节。若下游抛错，不重放、向上传播
+      // （重放会让下游副作用执行两次——继承上游的隐患，2026-08-26 第二轮审计修）。
+      let decision
       try {
-        const decision = await next()
+        decision = await next()
+      } catch (error) {
+        ctx.logger.debug('[dsh-prompt-injector] downstream pre-step error: ' + String((error && error.message) || error))
+        throw error
+      }
+      // 第二阶段：只做纯内存注入；任何异常都回退原决策，不破坏本轮。
+      try {
         if (!decision || decision.kind !== 'enter' || !decision.messages) return decision
         const s = spec()
         if (!s.enabled) return decision
@@ -78,7 +87,7 @@ export function apply(ctx, config = {}) {
         return { kind: 'enter', messages: [...decision.messages, ...reminders] }
       } catch (error) {
         ctx.logger.debug('[dsh-prompt-injector] injection failed: ' + String((error && error.message) || error))
-        return next()
+        return decision
       }
     })
     ctx.logger.debug('[dsh-prompt-injector] hooks installed for agent ' + agent.id)
