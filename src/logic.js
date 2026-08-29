@@ -3,35 +3,14 @@
  * host 入口 src/index.js 从这里导入；不依赖 dsh-settings / schemastery。
  */
 
-/** 默认内置提示词：图谱消费链路 + wiki 先查（按需执行的判断语义）。
- * 用户可在设置页增删改；此默认仅在用户层无 prompts 时生效。 */
-export const DEFAULT_PROMPTS = [
-  {
-    id: 'graph-wiki',
-    title: '图谱·Wiki 提醒',
-    enabled: true,
-    text: [
-      '[graph-wiki requirement] 本轮开始，先判断是否需要查图谱/Wiki，再决定是否执行——不是每轮都要查：',
-      '① 编码任务（本轮要改代码）→ 消费图谱：目标仓库先 `code-review-graph update` 刷新（无图谱则自动建库），然后 `crg search/impact/stats` 查询（多仓库自动发现：--repo <别名|路径> > 当前目录 .git 根 > 兜底 mem0_falkordb；`crg xsearch` 全仓搜索），深层结构用 graphify 查询（graphify-mcp 5566）。只改文档/纯叙述/无代码改动则跳过刷新。',
-      '② 技术事实类问题（版本/行为/配置/术语/流程步骤）→ 先 `gmcp search \'{"query":"..."}\'` 查 wiki（score≥0.45 取前 3 页，读页后再答，标注 [[wikilink]] 来源）。',
-      '③ 纯闲聊、纯算术、无事实成分的简单操作 → 跳过，直接回答。',
-      '若不确定属于哪类：宁可查一次（gmcp 或 crg 成本低），不要凭记忆给过时答案。'
-    ].join('\n')
-  },
-  {
-    id: 'post-compaction',
-    title: '压缩后提醒',
-    enabled: true,
-    trigger: 'postCompaction',
-    text: [
-      '[上下文已压缩] 本轮之前发生过 compaction，早期原文不可恢复。',
-      '涉及历史事实、报错原文、文件路径、此前决定时，先 mem0_search 或重读相关文件核实，勿凭印象引用。'
-    ].join('\n')
-  }
-]
+/** 默认内置提示词：空（2026-08-29 开源决策，发哥拍板）。
+ * 插件只留注入机制，不预设任何内容——提示词由用户在设置页自填自选触发模式。
+ * 写法示例见 README「Prompt examples」节。 */
+export const DEFAULT_PROMPTS = []
 
 /** 提示词列表防御性收敛（外部编辑 settings.yaml 时兜底）。
- * 语义：未配置（非数组/undefined）→ 内置默认；显式空数组 → 空（用户删光=不再注入）。 */
+ * 语义：未配置（非数组/undefined）→ 内置默认（现为空 = 不注入）；
+ * 显式空数组 → 空（用户删光=不再注入）。 */
 export function normPrompts(raw) {
   if (!Array.isArray(raw)) return DEFAULT_PROMPTS.slice()
   const out = []

@@ -112,6 +112,7 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 Uninstall: `dsh plugin --profile web remove dsh-prompt-injector`
 
 After restart, open Settings → Plugins → "Context injection" to manage prompts.
+The prompt list **starts empty** — nothing is injected until you add your own.
 
 ## Configuration
 
@@ -121,7 +122,7 @@ After restart, open Settings → Plugins → "Context injection" to manage promp
 |---|---|---|---|
 | `enabled` | boolean | `true` | Master switch. |
 | `skipTrivial` | boolean | `true` | Skip trivial rounds (ack/greeting/continuation). |
-| `prompts` | array | built-in default | Prompt list: `[{ id, title, text, enabled, trigger }]`; `trigger` is `everyTurn` (default) or `postCompaction`. |
+| `prompts` | array | `[]` (empty) | Prompt list: `[{ id, title, text, enabled, trigger }]`; `trigger` is `everyTurn` (default) or `postCompaction`. |
 
 The settings page edits these; the user layer wins over the composition
 defaults. To override via the profile patch:
@@ -143,11 +144,12 @@ defaults. To override via the profile patch:
             enabled: true
 ```
 
-### Built-in default prompt
+### Prompt examples (not built in)
 
-On a fresh install the plugin ships with two prompts. "图谱·Wiki 提醒"
-(`everyTurn`; code graph + wiki reminder) demonstrates the intended
-"judge first" style:
+The plugin ships with an **empty** list — the mechanism is generic, the
+content is yours. Two examples from real deployments you can copy and adapt.
+"图谱·Wiki 提醒" (`everyTurn`; code graph + wiki reminder) demonstrates the
+intended "judge first" style:
 
 ```text
 [graph-wiki requirement] 本轮开始，先判断是否需要查图谱/Wiki，再决定是否执行——不是每轮都要查：
@@ -157,10 +159,9 @@ On a fresh install the plugin ships with two prompts. "图谱·Wiki 提醒"
 若不确定属于哪类：宁可查一次（gmcp 或 crg 成本低），不要凭记忆给过时答案。
 ```
 
-The commands referenced (`crg`, `graphify`, `gmcp`) belong to this
+The commands referenced (`crg`, `graphify`, `gmcp`) belong to that
 deployment's own graph/wiki tooling — replace them with whatever your
-environment actually has (or remove the prompt entirely; the list is fully
-editable).
+environment actually has.
 
 "压缩后提醒" (`postCompaction`) fires once after each compaction, when early
 transcript is unrecoverable:

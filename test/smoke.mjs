@@ -8,23 +8,17 @@ import assert from 'node:assert/strict'
 
 import { DEFAULT_PROMPTS, makePromptMessage, shouldInject, isTrivialPrompt, normPrompts, selectPrompts } from '../src/logic.js'
 
-test('默认提示词：图谱·Wiki（everyTurn）+ 压缩后提醒（postCompaction）', () => {
-  assert.equal(DEFAULT_PROMPTS.length, 2)
-  const p = DEFAULT_PROMPTS[0]
-  assert.equal(p.id, 'graph-wiki')
-  assert.equal(p.title, '图谱·Wiki 提醒')
-  assert.equal(p.enabled, true)
-  for (const part of ['code-review-graph update', 'crg search/impact/stats', 'gmcp search', '不是每轮都要查', '纯闲聊、纯算术、无事实成分的简单操作 → 跳过']) {
-    assert.ok(p.text.includes(part), `默认文本应包含: ${part}`)
-  }
-  const c = DEFAULT_PROMPTS[1]
-  assert.equal(c.id, 'post-compaction')
-  assert.equal(c.title, '压缩后提醒')
-  assert.equal(c.trigger, 'postCompaction')
-  assert.equal(c.enabled, true)
-  for (const part of ['上下文已压缩', '不可恢复', 'mem0_search', '重读', '勿凭印象引用']) {
-    assert.ok(c.text.includes(part), `压缩后提醒文本应包含: ${part}`)
-  }
+test('默认提示词：空列表（2026-08-29 开源决策——只留机制，不预设内容）', () => {
+  assert.deepEqual(DEFAULT_PROMPTS, [])
+  // 未配置/非法 → 空（不注入）；用户自填才生效
+  assert.deepEqual(normPrompts(undefined), [])
+  assert.deepEqual(normPrompts('bad'), [])
+  // 空默认下整条链路不产出提醒
+  const sel = selectPrompts(normPrompts(undefined), {
+    freshUser: { source: { kind: 'user' }, content: [{ type: 'text', text: '干活' }] },
+    skipTrivial: true, generation: 3, applied: () => 0
+  })
+  assert.deepEqual(sel.prompts, [])
 })
 
 test('normPrompts：trigger 归一化（缺省/非法→everyTurn；postCompaction 保留）', () => {

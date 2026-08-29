@@ -11,8 +11,8 @@
  *   skipTrivial  —— 琐碎轮（问候/确认/继续等）是否跳过注入，默认 true
  *   prompts[]    —— 提示词列表 { id, title, text, enabled, trigger }，trigger:
  *                   'everyTurn'（默认，每轮注入）| 'postCompaction'（压缩代际
- *                   推进后的下一 freshUser 轮注入一次，同代不重复）。默认内置
- *                   「图谱·Wiki 提醒」（everyTurn）与「压缩后提醒」（postCompaction）。
+ *                   推进后的下一 freshUser 轮注入一次，同代不重复）。默认列表为
+ *                   空（2026-08-29 开源决策）：只留机制不预设内容，用户自填自选。
  *
  * 压缩代际来源：session/event 的 compaction/summary 事件（C0 实证载荷，零 LLM）。
  *

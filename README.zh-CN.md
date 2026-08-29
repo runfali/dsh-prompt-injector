@@ -77,7 +77,7 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 
 卸载：`dsh plugin --profile web remove dsh-prompt-injector`
 
-重启后到 设置 → 插件 →「上下文注入」管理提示词。
+重启后到 设置 → 插件 →「上下文注入」管理提示词。提示词列表**初始为空**——不自带任何内容，添加后才注入。
 
 ## 配置
 
@@ -87,7 +87,7 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 |---|---|---|---|
 | `enabled` | boolean | `true` | 总开关。 |
 | `skipTrivial` | boolean | `true` | 琐碎轮（问候/确认/继续）跳过注入。 |
-| `prompts` | array | 内置默认 | 提示词列表：`[{ id, title, text, enabled, trigger }]`；`trigger` 取 `everyTurn`（默认）或 `postCompaction`。 |
+| `prompts` | array | `[]`（空） | 提示词列表：`[{ id, title, text, enabled, trigger }]`；`trigger` 取 `everyTurn`（默认）或 `postCompaction`。 |
 
 设置页直接编辑；用户层优先于组合默认值。也可在 profile patch 中覆盖：
 
@@ -108,9 +108,9 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
             enabled: true
 ```
 
-### 内置默认提示词
+### 提示词示例（非内置）
 
-全新安装自带两条提示词。「图谱·Wiki 提醒」（`everyTurn`；代码图谱 + wiki 先查）示范「先判断再执行」的写法：
+插件自带列表为**空**——机制是通用的，内容由你定。以下两条来自真实部署，可直接复制改造。「图谱·Wiki 提醒」（`everyTurn`；代码图谱 + wiki 先查）示范「先判断再执行」的写法：
 
 ```text
 [graph-wiki requirement] 本轮开始，先判断是否需要查图谱/Wiki，再决定是否执行——不是每轮都要查：
@@ -120,7 +120,7 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 若不确定属于哪类：宁可查一次（gmcp 或 crg 成本低），不要凭记忆给过时答案。
 ```
 
-其中引用的命令（`crg`、`graphify`、`gmcp`）属于本部署自建的图谱/wiki 工具链——请替换为你环境里实际可用的命令，或直接删掉这条（列表完全可编辑）。
+其中引用的命令（`crg`、`graphify`、`gmcp`）属于该部署自建的图谱/wiki 工具链——请替换为你环境里实际可用的命令。
 
 「压缩后提醒」（`postCompaction`）在每次压缩后的下一轮注入一次——早期原文已不可恢复：
 
