@@ -6,10 +6,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { DEFAULT_PROMPTS, makePromptMessage, shouldInject, isTrivialPrompt, normPrompts } from '../src/logic.js'
+import { DEFAULT_PROMPTS, makePromptMessage, shouldInject, isTrivialPrompt, normPrompts, selectPrompts } from '../src/logic.js'
 
-test('默认提示词：一条「图谱·Wiki 提醒」，含判断语义', () => {
-  assert.equal(DEFAULT_PROMPTS.length, 1)
+test('默认提示词：图谱·Wiki（everyTurn）+ 压缩后提醒（postCompaction）', () => {
+  assert.equal(DEFAULT_PROMPTS.length, 2)
   const p = DEFAULT_PROMPTS[0]
   assert.equal(p.id, 'graph-wiki')
   assert.equal(p.title, '图谱·Wiki 提醒')
@@ -17,11 +17,71 @@ test('默认提示词：一条「图谱·Wiki 提醒」，含判断语义', () =
   for (const part of ['code-review-graph update', 'crg search/impact/stats', 'gmcp search', '不是每轮都要查', '纯闲聊、纯算术、无事实成分的简单操作 → 跳过']) {
     assert.ok(p.text.includes(part), `默认文本应包含: ${part}`)
   }
+  const c = DEFAULT_PROMPTS[1]
+  assert.equal(c.id, 'post-compaction')
+  assert.equal(c.title, '压缩后提醒')
+  assert.equal(c.trigger, 'postCompaction')
+  assert.equal(c.enabled, true)
+  for (const part of ['上下文已压缩', '不可恢复', 'mem0_search', '重读', '勿凭印象引用']) {
+    assert.ok(c.text.includes(part), `压缩后提醒文本应包含: ${part}`)
+  }
+})
+
+test('normPrompts：trigger 归一化（缺省/非法→everyTurn；postCompaction 保留）', () => {
+  const out = normPrompts([
+    { id: 'a', text: 'x' },
+    { id: 'b', text: 'y', trigger: 'postCompaction' },
+    { id: 'c', text: 'z', trigger: 'bogus' }
+  ])
+  assert.equal(out[0].trigger, 'everyTurn')
+  assert.equal(out[1].trigger, 'postCompaction')
+  assert.equal(out[2].trigger, 'everyTurn')
+})
+
+test('selectPrompts：everyTurn 行语义不变（freshUser+非琐碎），postCompaction 行按代际', () => {
+  const every = { id: 'e', title: 'E', text: 'x', enabled: true, trigger: 'everyTurn' }
+  const post = { id: 'p', title: 'P', text: 'y', enabled: true, trigger: 'postCompaction' }
+  const real = { source: { kind: 'user' }, content: [{ type: 'text', text: '帮我改代码' }] }
+  const trivial = { source: { kind: 'user' }, content: [{ type: 'text', text: '好的' }] }
+  const applied = new Map()
+  const run = (freshUser, generation, skipTrivial = true) =>
+    selectPrompts([every, post], { freshUser, skipTrivial, generation, applied: (id) => applied.get(id) || 0 })
+  // 代际 0：postCompaction 不注入
+  let sel = run(real, 0)
+  assert.deepEqual(sel.prompts.map((x) => x.id), ['e'])
+  assert.deepEqual(sel.mark, [])
+  // 代际推进到 1：注入一次并 mark
+  sel = run(real, 1)
+  assert.deepEqual(sel.prompts.map((x) => x.id), ['e', 'p'])
+  assert.deepEqual(sel.mark, ['p'])
+  applied.set('p', 1)
+  // 同代不再注入
+  sel = run(real, 1)
+  assert.deepEqual(sel.prompts.map((x) => x.id), ['e'])
+  assert.deepEqual(sel.mark, [])
+  // 新代再注入一次
+  sel = run(real, 2)
+  assert.deepEqual(sel.prompts.map((x) => x.id), ['e', 'p'])
+  applied.set('p', 2)
+  // 琐碎轮：everyTurn 被 skipTrivial 拦截，postCompaction 不拦截（一次性系统告知）
+  sel = run(trivial, 3)
+  assert.deepEqual(sel.prompts.map((x) => x.id), ['p'])
+  assert.deepEqual(sel.mark, ['p'])
+  applied.set('p', 3) // 模拟宿主按 mark 记账
+  // skipTrivial=false 时琐碎轮照常 everyTurn（同代 p 不再）
+  sel = run(trivial, 3, false)
+  assert.deepEqual(sel.prompts.map((x) => x.id), ['e'])
+  // 无 freshUser：全不注入
+  sel = run(undefined, 9)
+  assert.deepEqual(sel.prompts, [])
+  // 停用/空正文行被过滤
+  sel = selectPrompts([{ id: 'off', text: 'x', enabled: false, trigger: 'postCompaction' }, { id: 'empty', text: '', enabled: true }], { freshUser: real, skipTrivial: true, generation: 5, applied: () => 0 })
+  assert.deepEqual(sel.prompts, [])
 })
 
 test('normPrompts：非法输入兜底（非数组→默认；undefined→默认）', () => {
-  assert.equal(normPrompts(undefined).length, 1)
-  assert.equal(normPrompts('bad').length, 1)
+  assert.equal(normPrompts(undefined).length, DEFAULT_PROMPTS.length)
+  assert.equal(normPrompts('bad').length, DEFAULT_PROMPTS.length)
 })
 
 test('normPrompts：显式空数组保持为空（用户删光=不再注入，2026-08-26 审计 P1 回归）', () => {

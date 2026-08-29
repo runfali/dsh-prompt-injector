@@ -9,16 +9,19 @@
  * 配置（设置页可编辑，settings.yaml 用户层持久化）：
  *   enabled      —— 总开关
  *   skipTrivial  —— 琐碎轮（问候/确认/继续等）是否跳过注入，默认 true
- *   prompts[]    —— 提示词列表 { id, title, text, enabled }，默认内置一条
- *                   「图谱·Wiki 提醒」（编码任务消费图谱 + 事实问题先查 wiki，
- *                   按需执行的判断语义——不是每轮都要查）
+ *   prompts[]    —— 提示词列表 { id, title, text, enabled, trigger }，trigger:
+ *                   'everyTurn'（默认，每轮注入）| 'postCompaction'（压缩代际
+ *                   推进后的下一 freshUser 轮注入一次，同代不重复）。默认内置
+ *                   「图谱·Wiki 提醒」（everyTurn）与「压缩后提醒」（postCompaction）。
+ *
+ * 压缩代际来源：session/event 的 compaction/summary 事件（C0 实证载荷，零 LLM）。
  *
  * 只提醒、不执行：插件不调用任何图谱/wiki 命令，判断权在模型。
  */
 
 import z from '@deepseek-ai/schemastery'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { DEFAULT_PROMPTS, normPrompts, shouldInject, makePromptMessage } from './logic.js'
+import { DEFAULT_PROMPTS, normPrompts, freshUserOf, selectPrompts, makePromptMessage } from './logic.js'
 
 export const PROMPT_INJECTOR_NAMESPACE = settingsNamespace('prompt-injector')
 
@@ -26,7 +29,10 @@ const PromptSchema = z.object({
   id: z.string().default(''),
   title: z.string().default(''),
   text: z.string().default(''),
-  enabled: z.boolean().default(true)
+  enabled: z.boolean().default(true),
+  // C1（memorax 吸收 2026-08-29）：'everyTurn' | 'postCompaction'；旧配置缺省 = everyTurn 零迁移，
+  // 严格归一化在 logic.js normPrompts（非 'postCompaction' 一律回落 everyTurn）。
+  trigger: z.string().default('everyTurn')
 })
 
 const Config = z.object({
@@ -58,6 +64,43 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // C2（memorax 吸收 2026-08-29）：压缩代际计数。载荷实形经 rc.2 源码 + 真机持久日志
+  // 双重实证（C0）：event = {type:'compaction/summary', seq, time, data:{compactionId,
+  // shadowedSeqs, shadowedRange, shadowedTokenCount, provider, model, ...}}，字段嵌在
+  // data 层（D5 教训）。只数 summary（已提交的压缩）；start/end 不数（end 可带 error 无 summary）。
+  const MAP_CAP = 256
+  const compactionGen = new Map() // sessionId -> 已提交压缩次数（代际）
+  const appliedGen = new Map() // sessionId + '\u0000' + promptId -> 已注入时的代际
+  const capMap = (map) => {
+    while (map.size > MAP_CAP) map.delete(map.keys().next().value)
+  }
+
+  ctx.effect(() => ctx.on('session/event', (session, event) => {
+    try {
+      if (!event || event.type !== 'compaction/summary' || !session || !session.id) return
+      const next = (compactionGen.get(session.id) || 0) + 1
+      compactionGen.set(session.id, next)
+      capMap(compactionGen)
+      // C0 探针降级为 debug 日志：平台若漂移事件形状，此行即证据
+      ctx.logger.debug('[dsh-prompt-injector] compaction/summary session=' + session.id +
+        ' gen=' + next + ' seq=' + event.seq +
+        ' dataKeys=' + (event.data ? Object.keys(event.data).join(',') : '-'))
+    } catch (error) {
+      ctx.logger.debug('[dsh-prompt-injector] compaction counter failed: ' + String((error && error.message) || error))
+    }
+  }), 'pi:compaction-counter')
+
+  // 会话 dispose 即清（载荷 = (session)，dsh-session emitDisposed 实证）
+  ctx.effect(() => ctx.on('session/disposed', (session) => {
+    const id = session && session.id
+    if (!id) return
+    compactionGen.delete(id)
+    const prefix = id + '\u0000'
+    for (const k of appliedGen.keys()) {
+      if (typeof k === 'string' && k.startsWith(prefix)) appliedGen.delete(k)
+    }
+  }), 'pi:dispose-cleanup')
+
   const hookedAgents = new WeakSet()
 
   const installAgentHooks = (agent) => {
@@ -80,11 +123,22 @@ export function apply(ctx, config = {}) {
         if (!decision || decision.kind !== 'enter' || !decision.messages) return decision
         const s = spec()
         if (!s.enabled) return decision
-        if (!shouldInject(payload, s.skipTrivial)) return decision
-        const reminders = s.prompts
-          .filter((p) => p.enabled && p.text)
-          .map((p) => makePromptMessage(p))
-        if (!reminders.length) return decision
+        const freshUser = freshUserOf(payload)
+        if (!freshUser) return decision
+        const sessionId = agent.id
+        const sel = selectPrompts(s.prompts, {
+          freshUser,
+          skipTrivial: s.skipTrivial,
+          generation: compactionGen.get(sessionId) || 0,
+          applied: (pid) => appliedGen.get(sessionId + '\u0000' + pid) || 0
+        })
+        if (!sel.prompts.length) return decision
+        const reminders = sel.prompts.map((p) => makePromptMessage(p))
+        // 先构造消息再记代际：mark 只影响 postCompaction 行，构造失败时不吞提醒
+        for (const pid of sel.mark) {
+          appliedGen.set(sessionId + '\u0000' + pid, compactionGen.get(sessionId) || 0)
+          capMap(appliedGen)
+        }
         return { kind: 'enter', messages: [...decision.messages, ...reminders] }
       } catch (error) {
         ctx.logger.debug('[dsh-prompt-injector] injection failed: ' + String((error && error.message) || error))

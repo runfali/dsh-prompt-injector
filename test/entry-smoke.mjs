@@ -88,3 +88,69 @@ test('pre-step 端到端注入：freshUser 轮追加一条 notice；工具步/�
   const out3 = await run({ messages: [{ source: { kind: 'user' }, content: [{ type: 'text', text: '好的' }] }] })
   assert.equal(out3.messages.length, 1)
 })
+
+test('postCompaction 端到端：代际推进→注入一次→同代不重复→新代再注入→dispose 清零', async () => {
+  const mod = await import('../src/index.js')
+  const agentListeners = new Map()
+  const rootListeners = new Map()
+  const agent = { id: 'session-c', ctx: { on(evt, fn) { agentListeners.set(evt, fn); return () => {} } } }
+  const sessionObj = { id: 'session-c' }
+  const makeSctx = () => ({
+    settings: {
+      register() {
+        return {
+          get: () => ({
+            enabled: true, skipTrivial: true,
+            prompts: [
+              { id: 'a', title: '提醒A', text: '正文A', enabled: true },
+              { id: 'p', title: '压缩后', text: '正文P', enabled: true, trigger: 'postCompaction' }
+            ]
+          }),
+          watch: () => {}
+        }
+      }
+    },
+    effect: (fn) => fn(),
+    on: (evt, fn) => { rootListeners.set(evt, fn); if (evt === 'agent/created') fn({ agent }); return () => {} }
+  })
+  const ctx = {
+    logger: { debug: () => {} },
+    effect(fn) { return fn() },
+    on(evt, fn) { rootListeners.set(evt, fn); if (evt === 'agent/created') fn({ agent }); return () => {} },
+    get() { return undefined },
+    inject(services, cb) { return cb(makeSctx()) }
+  }
+  mod.apply(ctx, { enabled: true, skipTrivial: true })
+  const preStep = agentListeners.get('agent/pre-step')
+  const onEvent = rootListeners.get('session/event')
+  const onDisposed = rootListeners.get('session/disposed')
+  assert.equal(typeof onEvent, 'function', '应挂 session/event 监听')
+  assert.equal(typeof onDisposed, 'function', '应挂 session/disposed 监听')
+  const run = (text) => preStep({ messages: [{ source: { kind: 'user' }, content: [{ type: 'text', text }] }] }, async () => ({ kind: 'enter', messages: [{ id: 'm0' }] }))
+  const compact = () => onEvent(sessionObj, { type: 'compaction/summary', seq: 100, time: Date.now(), data: { compactionId: 'cid-1', shadowedSeqs: [1, 2], shadowedRange: { start: 1, end: 2 }, shadowedTokenCount: 999 } })
+  const summaries = (out) => out.messages.slice(1).map((m) => m.source.summary)
+
+  // 1. 未压缩过（gen 0）：只注入 everyTurn 行
+  assert.deepEqual(summaries(await run('帮我改代码')), ['提醒A'], 'gen0 不注入 postCompaction')
+  // 2. 压缩一次 → 下一实义轮注入两条
+  compact()
+  assert.deepEqual(summaries(await run('继续改')), ['提醒A', '压缩后'], '代际推进后注入一次')
+  // 3. 同代不再注入
+  assert.deepEqual(summaries(await run('再改一点')), ['提醒A'], '同代不重复')
+  // 4. 新代再注入
+  compact()
+  assert.deepEqual(summaries(await run('第三轮')), ['提醒A', '压缩后'], '新代再注入')
+  // 5. 琐碎轮：everyTurn 被拦、postCompaction 放行（一次性系统告知）
+  compact()
+  assert.deepEqual(summaries(await run('好的')), ['压缩后'], '琐碎轮仅 postCompaction 放行')
+  // 6. 非 summary 事件不计数
+  const before = summaries(await run('普通轮')) // 已应用 gen3 → 只剩 everyTurn
+  assert.deepEqual(before, ['提醒A'])
+  onEvent(sessionObj, { type: 'user/message', seq: 101, data: { id: 'x' } })
+  onEvent(sessionObj, { type: 'compaction/end', seq: 102, data: { compactionId: 'cid-1' } })
+  assert.deepEqual(summaries(await run('end 事件后')), ['提醒A'], '非 summary 事件不触发注入')
+  // 7. dispose 清零：代际与已应用记录重置
+  onDisposed(sessionObj)
+  compact()
+  assert.deepEqual(summaries(await run('dispose 后')), ['提醒A', '压缩后'], 'dispose 后重新计数并注入')
+})

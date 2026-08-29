@@ -17,6 +17,16 @@ export const DEFAULT_PROMPTS = [
       '③ 纯闲聊、纯算术、无事实成分的简单操作 → 跳过，直接回答。',
       '若不确定属于哪类：宁可查一次（gmcp 或 crg 成本低），不要凭记忆给过时答案。'
     ].join('\n')
+  },
+  {
+    id: 'post-compaction',
+    title: '压缩后提醒',
+    enabled: true,
+    trigger: 'postCompaction',
+    text: [
+      '[上下文已压缩] 本轮之前发生过 compaction，早期原文不可恢复。',
+      '涉及历史事实、报错原文、文件路径、此前决定时，先 mem0_search 或重读相关文件核实，勿凭印象引用。'
+    ].join('\n')
   }
 ]
 
@@ -31,7 +41,9 @@ export function normPrompts(raw) {
       id: String((p.id !== undefined && p.id !== null && p.id !== '') ? p.id : ('p' + i)),
       title: String(p.title !== undefined && p.title !== null ? p.title : '').trim(),
       text: String(p.text !== undefined && p.text !== null ? p.text : ''),
-      enabled: p.enabled !== false
+      enabled: p.enabled !== false,
+      // C1（2026-08-29 memorax 吸收）：触发模式，旧配置无此字段 = everyTurn，零迁移
+      trigger: p.trigger === 'postCompaction' ? 'postCompaction' : 'everyTurn'
     })
   })
   return out
@@ -99,12 +111,44 @@ export function makePromptMessage(prompt) {
   }
 }
 
-/** 判断本轮是否需要注入提醒：有 freshUser 才注入；skipTrivial 时琐碎输入跳过。 */
-export function shouldInject(payload, skipTrivial) {
-  const freshUser = ((payload && payload.messages) || []).find(
+/** 本轮 freshUser 消息（source.kind === 'user'）；无则 undefined。 */
+export function freshUserOf(payload) {
+  return ((payload && payload.messages) || []).find(
     (m) => m && m.source && m.source.kind === 'user'
   )
+}
+
+/** 判断本轮是否需要注入提醒（everyTurn 语义，保留兼容）：有 freshUser 才注入；skipTrivial 时琐碎输入跳过。 */
+export function shouldInject(payload, skipTrivial) {
+  const freshUser = freshUserOf(payload)
   if (!freshUser) return false
   if (skipTrivial !== true) return true
   return !isTrivialPrompt(textOfBlocks(freshUser.content))
+}
+
+/** 纯选择器（C3，memorax 吸收 2026-08-29）：按本轮 freshUser 与压缩代际决定注入哪些行。
+ * - everyTurn 行：有 freshUser 即注入；skipTrivial 时琐碎轮跳过（既有语义不变）。
+ * - postCompaction 行：仅 generation > 0 且 applied(promptId) < generation 时放行；
+ *   琐碎轮不拦截——系统状态一次性告知，每代至多一条，噪声有界。
+ * 返回 { prompts, mark }：mark = 注入后需记为已应用的 postCompaction 行 id。 */
+export function selectPrompts(prompts, opts) {
+  const { freshUser, skipTrivial, generation, applied } = opts || {}
+  if (!freshUser) return { prompts: [], mark: [] }
+  const trivial = skipTrivial === true && isTrivialPrompt(textOfBlocks(freshUser.content))
+  const gen = typeof generation === 'number' && generation > 0 ? generation : 0
+  const out = []
+  const mark = []
+  for (const p of prompts || []) {
+    if (!p || !p.enabled || !p.text) continue
+    if (p.trigger === 'postCompaction') {
+      const seen = typeof applied === 'function' ? Number(applied(p.id)) || 0 : 0
+      if (gen > 0 && seen < gen) {
+        out.push(p)
+        mark.push(p.id)
+      }
+    } else if (!trivial) {
+      out.push(p)
+    }
+  }
+  return { prompts: out, mark }
 }

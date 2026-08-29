@@ -46,6 +46,7 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 | 能力 | 行为 |
 |---|---|
 | **每轮注入** | `agent/pre-step` 事件，本轮携带新的真人输入时，把每条启用中的提示词追加为本轮上下文的一部分——`form:'notice'` 插件消息，一条提示词一行「上下文注入」提醒。 |
+| **触发模式** | 每条提示词可选 `everyTurn`（默认，每轮注入）或 `postCompaction`：上下文压缩发生后的下一轮实义输入注入一次（按会话统计已提交的 `compaction/summary` 事件；同一次压缩不重复；零 LLM 成本）。 |
 | **总开关** | `enabled` 全局开/关注入（设置页或配置均可）。 |
 | **琐碎轮过滤** | `skipTrivial`（默认开）：纯问候/确认/继续（好的、嗯、收到、继续、ok、thanks…）不注入，避免打扰；有实义内容的输入（如「继续帮我看看那个报错」）照常注入。 |
 | **提示词管理界面** | 设置页随增随删随改：每条标题 + 正文 + 行开关 + 删除按钮。 |
@@ -57,6 +58,7 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 - **注入点**：`agent/pre-step` → 向 `decision.messages` 追加（与 dsh-mem0-plugins 同一钩子链）。每条启用提示词一条消息，`role: user`，`source: { kind: 'plugin', form: 'notice', summary: '<标题>' }`——UI 折叠显示为「上下文注入 | 插件名 | 标题」，摘要无需展开即见。
 - **挂载**：监听 `agent/created` 覆盖新 agent，插件启动时 backfill 已有 agent（`WeakSet` 幂等防双触发）。
 - **琐碎判定**：问候/确认/继续词表（移植自 dsh-mem0-plugins，其源头为 hermes `is_trivial_prompt`，MIT）+ 斜杠命令形态；带真实内容的输入绝不误判。
+- **压缩代际**：插件级 `session/event` 监听按会话统计已提交的 `compaction/summary` 事件；`postCompaction` 行每代至多注入一次（按提示词记录已应用代际，`session/disposed` 即清）。旧配置无 `trigger` 字段 = `everyTurn`，零迁移。
 - **持久化**：提示词存 dsh 设置存储（用户层），设置页即改即存，无需重启。
 
 ![注入效果——每条启用提示词的展开提醒行](docs/screenshot/Plugin_Presentation_Mode.png)
@@ -85,7 +87,7 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 |---|---|---|---|
 | `enabled` | boolean | `true` | 总开关。 |
 | `skipTrivial` | boolean | `true` | 琐碎轮（问候/确认/继续）跳过注入。 |
-| `prompts` | array | 内置默认 | 提示词列表：`[{ id, title, text, enabled }]`。 |
+| `prompts` | array | 内置默认 | 提示词列表：`[{ id, title, text, enabled, trigger }]`；`trigger` 取 `everyTurn`（默认）或 `postCompaction`。 |
 
 设置页直接编辑；用户层优先于组合默认值。也可在 profile patch 中覆盖：
 
@@ -108,7 +110,7 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 
 ### 内置默认提示词
 
-全新安装自带一条「图谱·Wiki 提醒」（代码图谱 + wiki 先查），示范「先判断再执行」的写法：
+全新安装自带两条提示词。「图谱·Wiki 提醒」（`everyTurn`；代码图谱 + wiki 先查）示范「先判断再执行」的写法：
 
 ```text
 [graph-wiki requirement] 本轮开始，先判断是否需要查图谱/Wiki，再决定是否执行——不是每轮都要查：
@@ -120,6 +122,13 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 
 其中引用的命令（`crg`、`graphify`、`gmcp`）属于本部署自建的图谱/wiki 工具链——请替换为你环境里实际可用的命令，或直接删掉这条（列表完全可编辑）。
 
+「压缩后提醒」（`postCompaction`）在每次压缩后的下一轮注入一次——早期原文已不可恢复：
+
+```text
+[上下文已压缩] 本轮之前发生过 compaction，早期原文不可恢复。
+涉及历史事实、报错原文、文件路径、此前决定时，先 mem0_search 或重读相关文件核实，勿凭印象引用。
+```
+
 ## 编写好的提示词
 
 插件的价值取决于每条提示词的**写法**。实践检验过的建议：
@@ -128,19 +137,20 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 2. **显式允许跳过。** 不含事实内容、不涉代码的轮次应该被告知「直接回答即可」——否则一条听起来强制的提示词每轮都在烧 token 和注意力。
 3. **给不确定性一个兜底。** 「不确定属于哪类时，查一次很便宜——不要凭记忆给过时答案」。
 4. **保持简短。** 每条一屏以内；长篇大论会被扫读而非遵守。
-5. **考虑频率。** 每条启用提示词**每轮**注入。规则只对特定任务类型相关也没问题（模型按判断文本过滤），但别堆叠太多长提示词。
+5. **考虑频率。** `everyTurn` 提示词**每轮**注入。规则只对特定任务类型相关也没问题（模型按判断文本过滤），但别堆叠太多长提示词；只在上下文压缩后才有意义的规则请选 `postCompaction`。
 
 ## 开发与测试
 
 ```bash
-node --test test/smoke.mjs        # host 逻辑：默认值/归一化/注入决策
-node test/client-smoke.mjs        # client bundle：slot 契约/翻译/卡片渲染
+node --test test/smoke.mjs        # host 逻辑：默认值/归一化/注入决策/压缩代际
+node --test test/entry-smoke.mjs  # host 入口加载 + pre-step/compaction 端到端
+node test/client-smoke.mjs        # client bundle：slot 契约/翻译/卡片渲染/trigger 下拉
 ```
 
 结构：
 
 - `src/index.js` — 插件入口：`installSettingsSection` + `agent/pre-step` 注入 + agent hooks/backfill。
-- `src/logic.js` — 零依赖纯逻辑（默认提示词 / `normPrompts` / `isTrivialPrompt` / `makePromptMessage` / `shouldInject`）。
+- `src/logic.js` — 零依赖纯逻辑（默认提示词 / `normPrompts` / `isTrivialPrompt` / `makePromptMessage` / `shouldInject` / `selectPrompts` 代际选择器）。
 - `lib/client.js` — 设置卡（总开关 + 琐碎过滤 + 提示词列表编辑器），`PInj_` 前缀样式防冲突。
 
 ## 许可

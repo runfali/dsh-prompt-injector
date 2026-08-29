@@ -64,6 +64,7 @@ redlines, reply style…), add a prompt in the settings page.
 | Capability | Behavior |
 |---|---|
 | **Per-round injection** | On `agent/pre-step`, when the round carries fresh user input, every enabled prompt is appended to this round's context as a `form:'notice'` plugin-source message — one "Context injection" line each. |
+| **Trigger modes** | Each prompt row picks `everyTurn` (default) or `postCompaction`: injected exactly once on the next substantive round after a context compaction (counts committed `compaction/summary` events per session; no repeat within the same compaction; zero LLM cost). |
 | **Master switch** | `enabled` turns injection on/off globally (settings page or config). |
 | **Trivial-round filtering** | `skipTrivial` (default on) skips brief acknowledgements/greetings/continuations (好的/嗯/收到/继续/ok/thanks…), so reminders don't nag; substantive input (e.g. "继续帮我看看那个报错") still gets them. |
 | **Prompt management UI** | Add / delete / edit prompts, per-row enable switch, per-row title + body, all in the settings page. |
@@ -84,6 +85,11 @@ redlines, reply style…), add a prompt in the settings page.
   (ported from dsh-mem0-plugins, itself from hermes `is_trivial_prompt`,
   MIT) + slash-command pattern; input carrying real content is never
   miscategorized.
+- **Compaction generations**: a plugin-level `session/event` listener counts
+  committed `compaction/summary` events per session; `postCompaction` rows fire
+  once per generation (applied-generation tracked per prompt, cleared on
+  `session/disposed`). Old configs without `trigger` behave as `everyTurn` —
+  zero migration.
 - **Persistence**: prompts live in the dsh settings store (user layer),
   editable in the settings page, saving immediately without a restart.
 
@@ -115,7 +121,7 @@ After restart, open Settings → Plugins → "Context injection" to manage promp
 |---|---|---|---|
 | `enabled` | boolean | `true` | Master switch. |
 | `skipTrivial` | boolean | `true` | Skip trivial rounds (ack/greeting/continuation). |
-| `prompts` | array | built-in default | Prompt list: `[{ id, title, text, enabled }]`. |
+| `prompts` | array | built-in default | Prompt list: `[{ id, title, text, enabled, trigger }]`; `trigger` is `everyTurn` (default) or `postCompaction`. |
 
 The settings page edits these; the user layer wins over the composition
 defaults. To override via the profile patch:
@@ -139,8 +145,9 @@ defaults. To override via the profile patch:
 
 ### Built-in default prompt
 
-On a fresh install the plugin ships with one prompt, "图谱·Wiki 提醒" (code
-graph + wiki reminder), which demonstrates the intended "judge first" style:
+On a fresh install the plugin ships with two prompts. "图谱·Wiki 提醒"
+(`everyTurn`; code graph + wiki reminder) demonstrates the intended
+"judge first" style:
 
 ```text
 [graph-wiki requirement] 本轮开始，先判断是否需要查图谱/Wiki，再决定是否执行——不是每轮都要查：
@@ -154,6 +161,14 @@ The commands referenced (`crg`, `graphify`, `gmcp`) belong to this
 deployment's own graph/wiki tooling — replace them with whatever your
 environment actually has (or remove the prompt entirely; the list is fully
 editable).
+
+"压缩后提醒" (`postCompaction`) fires once after each compaction, when early
+transcript is unrecoverable:
+
+```text
+[上下文已压缩] 本轮之前发生过 compaction，早期原文不可恢复。
+涉及历史事实、报错原文、文件路径、此前决定时，先 mem0_search 或重读相关文件核实，勿凭印象引用。
+```
 
 ## Writing good prompts
 
@@ -170,15 +185,17 @@ worked in practice:
    is cheap — don't answer from stale memory."
 4. **Keep it short.** One screen or less per prompt; a wall of text gets
    skimmed, not followed.
-5. **Consider frequency.** Every enabled prompt is injected **every** round.
+5. **Consider frequency.** An `everyTurn` prompt is injected **every** round.
    If a rule is only relevant to a specific task type, that's fine (the model
-   filters by the judgment text) — but don't stack many long prompts.
+   filters by the judgment text) — but don't stack many long prompts. Rules
+   that only matter after a context compaction should use `postCompaction`.
 
 ## Development & testing
 
 ```bash
-node --test test/smoke.mjs        # host logic: defaults, normalization, injection decision
-node test/client-smoke.mjs        # client bundle: slot contract, locale, card rendering
+node --test test/smoke.mjs        # host logic: defaults, normalization, injection decision, generations
+node --test test/entry-smoke.mjs  # host entry load + pre-step/compaction end-to-end
+node test/client-smoke.mjs        # client bundle: slot contract, locale, card rendering, trigger select
 ```
 
 Layout:
@@ -186,7 +203,8 @@ Layout:
 - `src/index.js` — plugin entry: `installSettingsSection` + `agent/pre-step`
   injection + agent hooks/backfill.
 - `src/logic.js` — zero-dependency pure logic (defaults, `normPrompts`,
-  `isTrivialPrompt`, `makePromptMessage`, `shouldInject`).
+  `isTrivialPrompt`, `makePromptMessage`, `shouldInject`, `selectPrompts`
+  generation selector).
 - `lib/client.js` — settings card (master switch + trivial toggle + prompt
   list editor), `PInj_` prefixed styles.
 

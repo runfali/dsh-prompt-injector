@@ -138,7 +138,7 @@ for (const key of Object.keys(zh)) {
   assert.ok(Object.prototype.hasOwnProperty.call(en, key), 'en 应含 zh 全部键: ' + key)
 }
 ok('zh/en 键集合一致 (' + Object.keys(zh).length + ' 键)')
-for (const key of ['card.title', 'card.promptCount', 'field.enabled', 'hint.enabled', 'field.skipTrivial', 'hint.skipTrivial', 'field.prompts', 'hint.prompts', 'prompt.add', 'prompt.delete', 'prompt.titlePlaceholder', 'prompt.textPlaceholder', 'prompt.emptyBodyWarn', 'group.general', 'group.prompts']) {
+for (const key of ['card.title', 'card.promptCount', 'field.enabled', 'hint.enabled', 'field.skipTrivial', 'hint.skipTrivial', 'field.prompts', 'hint.prompts', 'prompt.add', 'prompt.delete', 'prompt.titlePlaceholder', 'prompt.textPlaceholder', 'prompt.emptyBodyWarn', 'prompt.triggerLabel', 'prompt.triggerEveryTurn', 'prompt.triggerPostCompaction', 'group.general', 'group.prompts']) {
   assert.ok(zh[key], 'zh 翻译键缺失: ' + key)
 }
 ok('关键翻译键齐全')
@@ -177,7 +177,7 @@ function collectText(node) {
 }
 collectText(jsxStub(CardWithHooks, { t: (k) => zh[k] || k }), 0)
 const joined = texts.join(" ")
-for (const needle of ['上下文注入（通用提示词）', '启用注入', '琐碎输入跳过', '提示词列表', '添加提示词', '图谱·Wiki 提醒', '删除', '保存']) {
+for (const needle of ['上下文注入（通用提示词）', '启用注入', '琐碎输入跳过', '提示词列表', '添加提示词', '图谱·Wiki 提醒', '删除', '保存', '触发', '每轮注入']) {
   assert.ok(joined.includes(needle), '渲染文案应含: ' + needle)
 }
 ok('卡片渲染包含全部控件文案（含提示词行与添加按钮）')
@@ -261,5 +261,42 @@ assert.ok(roFlags.every((d) => d === true), '只读态下所有 checkbox 应禁�
 scopeState.writable = savedWritable2
 scopeListeners.forEach((fn) => fn())
 ok('checkbox disabled 绑定与添加空行保留正确')
+
+console.log('== trigger 下拉与保存链路（C5，memorax 吸收 2026-08-29）==')
+// 1. 行编辑器渲染 trigger 下拉：select 控件 + 两个选项
+function collectSelects(node, out) {
+  if (node === null || node === undefined) return
+  if (typeof node.type === 'function') { collectSelects(node.type(node.props), out); return }
+  if (node.type === 'select') out.push(node.props)
+  for (const child of node.children || []) collectSelects(child, out)
+}
+const selects = []
+collectSelects(jsxStub(CardWithHooks, { t: (k) => zh[k] || k }), selects)
+assert.ok(selects.length >= 1, '提示词行应渲染 trigger select')
+assert.equal(selects[0].value, 'everyTurn', '无 trigger 旧行显示 everyTurn（零迁移）')
+assert.equal(selects[0].disabled, false, '可写态 select 不禁用')
+ok('trigger 下拉渲染：旧行缺省显示 everyTurn')
+// 2. edit→save 保留 trigger；parseFieldValue 归一化非法值
+payload.edit('prompts', [
+  { id: 'g1', title: '图谱·Wiki 提醒', text: '正文', enabled: true, trigger: 'postCompaction' },
+  { id: 'g2', title: '无 trigger', text: 'x', enabled: true },
+  { id: 'g3', title: '非法 trigger', text: 'y', enabled: true, trigger: 'bogus' }
+])
+assert.equal(snap().prompts.stagedList[0].trigger, 'postCompaction', 'staged 保留 postCompaction')
+assert.equal(snap().prompts.stagedList[1].trigger, 'everyTurn', '缺省归一化 everyTurn')
+assert.equal(snap().prompts.stagedList[2].trigger, 'everyTurn', '非法值归一化 everyTurn')
+await payload.save()
+assert.equal(scopeState.user.prompts[0].trigger, 'postCompaction', '落盘保留 postCompaction')
+assert.equal(scopeState.user.prompts[2].trigger, 'everyTurn', '落盘归一化非法值')
+ok('trigger 三态（保留/缺省/非法归一）保存链路正确')
+// 3. 只读态 select 禁用
+scopeState.writable = false
+scopeListeners.forEach((fn) => fn())
+const roSelects = []
+collectSelects(jsxStub(CardWithHooks, { t: (k) => zh[k] || k }), roSelects)
+assert.ok(roSelects.length >= 1 && roSelects.every((props) => props.disabled === true), '只读态 select 应禁用')
+scopeState.writable = savedWritable
+scopeListeners.forEach((fn) => fn())
+ok('只读态 trigger 下拉禁用')
 
 console.log('\n全部通过: ' + PASS.length + ' 项')
