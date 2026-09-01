@@ -10,6 +10,10 @@
  *
  * 依赖 @deepseek-ai/dsh-settings / @deepseek-ai/schemastery：
  * 运行前确保依赖可用（npm/pnpm install，或 node_modules 存在）。
+ * dsh 0.1.2-alpha.3 起 installSettingsSection 帮助函数已移除，接线为
+ * settings.installSection(owner, ns, schema, entry, hooks)——stub 按 alpha.3
+ * 真实语义模拟（register(base=entry) → setSource → 卸载回落 effect →
+ * onChange 同步首发 → watch 持续通知）。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,10 +28,20 @@ test('host entry 可加载（schemastery default import 契约）', async () => 
 test('apply 可用最小 stub 上下文驱动（注入钩子注册不炸）', async () => {
   const mod = await import('../src/index.js')
   const listeners = []
-  // installSettingsSection 内部会 ctx.inject(['settings'], cb)——stub 直接执行
-  // 回调（模拟 settings 服务就绪），回调收到带 settings 注册能力的子 ctx。
+  // alpha.3 契约：ctx.inject(['settings'], cb) → settings.installSection(...)。
+  // stub 直接执行回调（模拟 settings 服务就绪），按 alpha.3 真实语义模拟
+  // installSection 主链路：register(base=entry) → setSource → onChange 同步
+  // 首发 → watch 持续通知（provider 卸载回落 effect 不涉及本测试，未模拟）。
   const makeSettingsScope = () => ({
-    register() { return { get: () => ({ enabled: true, skipTrivial: true }), watch: () => {} } }
+    installSection(owner, ns, schema, entry, hooks) {
+      const sectionScope = this.register(ns, schema, { base: entry })
+      hooks.setSource(() => sectionScope.get())
+      hooks.onChange()
+      sectionScope.watch(() => hooks.onChange())
+    },
+    register(ns, schema, options) {
+      return { get: () => ({ enabled: true, skipTrivial: true }), watch: () => {} }
+    }
   })
   const ctx = {
     logger: { debug: () => {} },
@@ -63,6 +77,13 @@ test('pre-step 端到端注入：freshUser 轮追加一条 notice；工具步/�
     inject(services, cb) {
       const sctx = {
         settings: {
+          // alpha.3 installSection 语义模拟（同 dsh-mem0-plugins smoke stub）
+          installSection(owner, ns, schema, entry, hooks) {
+            const sectionScope = this.register(ns, schema, { base: entry })
+            hooks.setSource(() => sectionScope.get())
+            hooks.onChange()
+            sectionScope.watch(() => hooks.onChange())
+          },
           register() { return { get: () => ({ enabled: true, skipTrivial: true, prompts: [{ id: 'a', title: '提醒A', text: '正文A', enabled: true }, { id: 'b', title: '提醒B', text: '', enabled: true }] }), watch: () => {} } }
         },
         effect: (fn) => fn(),
@@ -97,6 +118,13 @@ test('postCompaction 端到端：代际推进→注入一次→同代不重复�
   const sessionObj = { id: 'session-c' }
   const makeSctx = () => ({
     settings: {
+      // alpha.3 installSection 语义模拟（同 dsh-mem0-plugins smoke stub）
+      installSection(owner, ns, schema, entry, hooks) {
+        const sectionScope = this.register(ns, schema, { base: entry })
+        hooks.setSource(() => sectionScope.get())
+        hooks.onChange()
+        sectionScope.watch(() => hooks.onChange())
+      },
       register() {
         return {
           get: () => ({
