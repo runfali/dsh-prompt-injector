@@ -39,8 +39,28 @@
 
 定向复核无新 P0/P1/P2。`node --test` 无参全量 12 文件级通过 + client-smoke 10 项；git fsck 干净；package.json 补 `repository` 字段（开源准备）。
 
+## 第五轮（git 待定，2026-09-02 —— dsh 0.1.2-alpha.3 适配后按需审计）
+
+背景：适配 5 commits（4610266..4934502，settings 接线迁移）+ C 组 trigger 双模（b2d1263，当时未走审计循环）后按需审计。
+
+**P2 ×1**
+- `normPrompts` 重复 id 不去重——用户手写 yaml 两条同 id：client 行 key 冲突（React 渲染错位）+ postCompaction 代际记账共享（一条注入后另一条同代被误判已注入而丢失）。修：`usedIds` 去重，重复追加序号（a → a-2 → a-3，序号碰撞链推进）；UI 添加的行用 randomUUID 不受影响。回归测试含碰撞链（c/c-2/c-2-2/c-3）。
+
+**契约级核对（alpha.3 宿主源码实证，非记忆）**
+- `settingsNamespace()`/`installSettingsSection()` 已从 dsh-settings 删除（grep 零命中）；`settings.installSection(owner, ns, schema, entry, hooks)` 实证 lib/index.js:327——register(base=entry) → setSource(scope.get) → 卸载回落 effect（isUnloading(owner) 检查）→ onChange 同步首发 → watch 持续通知
+- `register()` 校验 ns 为小写连字符标识符（'prompt-injector' 合法）；重复注册抛错
+- `agent/pre-step` waterfall 载荷 {messages, turn, step, signal}、fallback {kind:'enter', messages}——注入器 return 形态兼容；`session/event` 二参 (session, event)={type,seq,time,data}；compaction/summary 事件仍在（dsh-compaction invariant 实证）
+- client 侧：settingsScope/locale/slots 服务名在（dsh-client-locale 实证 bind 用法）；settings.plugin.item slot 注册端在 dsh-cordis-client-runner + dsh-client-ui-settings-plugins；`dsh.client.inject` 字段可选（optionalStringArray + inject !== void 0），删除安全；platform 必须 string（"web" 保留）
+- jsx/jsxs stub 均正确传 props（技能记载的经典盲区已防）
+
+**P3 记录**
+- 插件热卸载后已挂 agent 的 pre-step 监听残留（agent.ctx.on 未保存 disposer；与 dsh-mem0-plugins backfill 模式同构共享，运维边缘场景，暂不修）
+- makePromptMessage 不截断正文（超长自填内容信任用户输入；与 mem0 工具回执输出硬化不同源，记录在案）
+
+**健康面**：测试 15 + 14 全绿（新增重复 id 回归）；反向对照旧代码 0/4 炸、新代码 4/4 绿；适配前后 entry-smoke 契约形状一致。
+
 ## 当前测试基线（全绿）
 
-- `node --test`（smoke 8 + entry 3）
-- `node test/client-smoke.mjs`（10 项：locale/slot/渲染/保存链路/只读态/discard/失败路径）
+- `node --test test/smoke.mjs test/entry-smoke.mjs`（11 + 4）
+- `node test/client-smoke.mjs`（14 项：locale/slot/渲染/保存链路/只读态/discard/失败路径/交互回归/trigger 三态）
 - README 双语 10 章节一一对应；默认提示词与代码一致性核对通过
