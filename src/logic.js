@@ -14,10 +14,25 @@ export const DEFAULT_PROMPTS = []
 export function normPrompts(raw) {
   if (!Array.isArray(raw)) return DEFAULT_PROMPTS.slice()
   const out = []
+  const usedIds = new Set()
   raw.forEach((p, i) => {
     if (!p || typeof p !== 'object') return
+    let id = String((p.id !== undefined && p.id !== null && p.id !== '') ? p.id : ('p' + i))
+    // 2026-09-02 审计 P2：重复 id 不去重会破坏两条依赖 id 的语义——client 行 key
+    // 冲突（React 渲染错位）+ postCompaction 代际记账共享（一条注入后另一条同代
+    // 被误判已注入而丢失）。重复时追加序号保证唯一（UI 添加的行用 randomUUID 不会撞）。
+    if (usedIds.has(id)) {
+      let n = 2
+      let candidate = id + '-' + n
+      while (usedIds.has(candidate)) {
+        n += 1
+        candidate = id + '-' + n
+      }
+      id = candidate
+    }
+    usedIds.add(id)
     out.push({
-      id: String((p.id !== undefined && p.id !== null && p.id !== '') ? p.id : ('p' + i)),
+      id,
       title: String(p.title !== undefined && p.title !== null ? p.title : '').trim(),
       text: String(p.text !== undefined && p.text !== null ? p.text : ''),
       enabled: p.enabled !== false,
