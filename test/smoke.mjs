@@ -96,6 +96,32 @@ test('normPrompts：过滤非法条目、id 自动补、enabled 默认 true', ()
   assert.equal(out[1].enabled, false)
 })
 
+test('normPrompts：重复 id 去重（2026-09-02 审计 P2——行 key 冲突 + postCompaction 记账共享）', () => {
+  // 用户手写 yaml 两条同 id：应产出唯一 id（第二条追加序号），不破坏
+  // client 行 key 与 postCompaction 代际记账的「一 id 一账」语义。
+  const out = normPrompts([
+    { id: 'a', title: 'A1', text: 'x1', trigger: 'postCompaction' },
+    { id: 'a', title: 'A2', text: 'x2', trigger: 'postCompaction' },
+    { id: 'a', title: 'A3', text: 'x3', trigger: 'postCompaction' },
+    { id: 'b', title: 'B', text: 'y' }
+  ])
+  assert.equal(out.length, 4)
+  const ids = out.map((p) => p.id)
+  assert.equal(new Set(ids).size, ids.length, 'id 全部唯一')
+  assert.deepEqual(ids, ['a', 'a-2', 'a-3', 'b'], '重复 id 追加序号且不误伤后续')
+  // 不重复的合法 id 原样保留（零迁移）
+  assert.equal(out[0].title, 'A1')
+  assert.equal(out[3].title, 'B')
+  // 序号碰撞链：a、a-2 已存在时第三条应取 a-3 而非撞 a-2
+  const chained = normPrompts([
+    { id: 'c', title: 'C1' },
+    { id: 'c', title: 'C2' },
+    { id: 'c-2', title: 'C3' },
+    { id: 'c', title: 'C4' }
+  ])
+  assert.deepEqual(chained.map((p) => p.id), ['c', 'c-2', 'c-2-2', 'c-3'], '序号碰撞链正确推进')
+})
+
 test('makePromptMessage：notice 形态 + summary 纯标题（UI 自动加「上下文注入」前缀，2026-08-27 反馈）', () => {
   const m = makePromptMessage({ id: 'a', title: '图谱·Wiki 提醒', text: '正文', enabled: true })
   assert.equal(m.role, 'user')
