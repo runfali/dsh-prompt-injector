@@ -6,16 +6,18 @@
 #   dsh plugin --profile web remove dsh-prompt-injector
 # Restart dsh after install/uninstall; settings-page edits apply immediately.
 #
-# Defaults (enabled on install): one built-in prompt 「图谱·Wiki 提醒」 —
-# 编码任务消费图谱链路 + 事实问题先查 wiki，按需执行（不是每轮都要查）。
-# Users add/remove/edit prompts in Settings → Plugins → 上下文注入（通用提示词）。
+# Defaults (enabled on install): no built-in prompts — the mechanism ships
+# empty (2026-08-29 open-source decision); users add their own prompts in
+# Settings → Plugins → 上下文注入（通用提示词）. Example prompts live in the
+# README "Prompt examples" section.
 
 - insert:
     - id: prompt-injector
       name: dsh-prompt-injector
       config:
         # `enabled` / `skipTrivial` omitted: schema defaults true (enabled,
-        # skip trivial rounds). `prompts` omitted: built-in default (git 图谱·
-        # Wiki 提醒). All editable in the settings page (user layer wins).
+        # skip trivial rounds). `prompts` omitted: empty default = nothing
+        # injected until the user adds prompts. All editable in the settings
+        # page (user layer wins).
         enabled: true
         skipTrivial: true
