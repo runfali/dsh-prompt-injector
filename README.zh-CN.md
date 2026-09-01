@@ -149,7 +149,7 @@ node test/client-smoke.mjs        # client bundle：slot 契约/翻译/卡片渲
 
 结构：
 
-- `src/index.js` — 插件入口：`installSettingsSection` + `agent/pre-step` 注入 + agent hooks/backfill。
+- `src/index.js` — 插件入口：`settings.installSection` 接线（dsh 0.1.2-alpha.3+）+ `agent/pre-step` 注入 + agent hooks/backfill。
 - `src/logic.js` — 零依赖纯逻辑（默认提示词 / `normPrompts` / `isTrivialPrompt` / `makePromptMessage` / `shouldInject` / `selectPrompts` 代际选择器）。
 - `lib/client.js` — 设置卡（总开关 + 琐碎过滤 + 提示词列表编辑器），`PInj_` 前缀样式防冲突。
 

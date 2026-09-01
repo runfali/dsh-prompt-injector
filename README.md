@@ -201,8 +201,8 @@ node test/client-smoke.mjs        # client bundle: slot contract, locale, card r
 
 Layout:
 
-- `src/index.js` — plugin entry: `installSettingsSection` + `agent/pre-step`
-  injection + agent hooks/backfill.
+- `src/index.js` — plugin entry: `settings.installSection` wiring (dsh
+  0.1.2-alpha.3+) + `agent/pre-step` injection + agent hooks/backfill.
 - `src/logic.js` — zero-dependency pure logic (defaults, `normPrompts`,
   `isTrivialPrompt`, `makePromptMessage`, `shouldInject`, `selectPrompts`
   generation selector).
