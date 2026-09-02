@@ -97,7 +97,16 @@ redlines, reply style…), add a prompt in the settings page.
 
 ## Requirements
 
-- DeepSeek Harness (dsh) web profile, Node ≥ 22.
+- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3** (web profile), Node.js
+  `^22.19.0 || >=24.0.0`. Verified on dsh 0.1.2-alpha.4 / Node v24.19.0 — a
+  disposable-profile install/start/uninstall evidence transcript is in
+  [docs/EVIDENCE.md](docs/EVIDENCE.md).
+- Runtime dependencies: **none**. The plugin declares three peers only
+  (`@deepseek-ai/dsh-settings`, `@deepseek-ai/schemastery`, `react`) — all
+  provided by the dsh host install itself.
+- Security & failure bounds: no network access, no child processes, no
+  filesystem writes; every injection is wrapped, so a plugin fault can never
+  break a conversation turn. Injected text is never executed.
 - The prompts you write may reference your own tooling (code graph services,
   wiki search commands, …) — those are just text; nothing is executed by the
   plugin.

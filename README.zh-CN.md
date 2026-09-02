@@ -65,7 +65,9 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 
 ## 环境要求
 
-- DeepSeek Harness (dsh) web profile，Node ≥ 22。
+- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。已在 dsh 0.1.2-alpha.4 / Node v24.19.0 实测——一次性 Profile 的安装/启动/卸载全链路证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)。
+- 运行时依赖：**无**。仅声明三个 peer（`@deepseek-ai/dsh-settings`、`@deepseek-ai/schemastery`、`react`），全部由 dsh 宿主自身提供。
+- 安全与失败边界：无网络访问、无子进程、无文件写；注入全路径 try/catch 包裹，插件故障不破坏对话轮次；注入文本永不执行。
 - 提示词正文里引用的命令（图谱服务、wiki 检索等）属于你自己的环境——它们只是文本，插件不执行任何东西。
 
 ## 安装
