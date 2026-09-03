@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-injector",
-  "version": "0.2.1",
+  "version": "0.1.2-rc.1",
   "description": "Generic per-turn prompt injector for the DeepSeek Harness web profile — manage a list of context prompts (with enable switch) in the settings page; every round of conversation injects each enabled prompt as a notice line (「上下文注入 xxx」) into the model context, exactly like the mem0 recall reminder. Host-only logic + client settings card; zero dsh source changes.",
   "type": "module",
   "main": "src/index.js",
