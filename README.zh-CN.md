@@ -65,7 +65,7 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 
 ## 环境要求
 
-- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。已在 dsh 0.1.2-alpha.4 / Node v24.19.0 实测——一次性 Profile 的安装/启动/卸载全链路证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)。
+- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。机器可读区间见 `dsh.engines.dsh: ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6"`——**必须加析取**：npm semver 规定预发布版本只被「区间内含同 `[major,minor,patch]` 元组的预发布」的区间满足，光写 `<0.2.0` 覆盖不到 `0.1.5-rc.1`。已在 dsh **0.1.5-rc.1** / Node v24.19.0 实测（更早版本在 0.1.2-alpha.4 实测）——一次性 Profile 安装/启动/卸载证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)，真机注入实录见 [docs/AUDIT.md](docs/AUDIT.md)。
 - 运行时依赖：**无**。仅声明三个 peer（`@deepseek-ai/dsh-settings`、`@deepseek-ai/schemastery`、`react`），全部由 dsh 宿主自身提供。
 - 安全与失败边界：无网络访问、无子进程、无文件写；注入全路径 try/catch 包裹，插件故障不破坏对话轮次；注入文本永不执行。
 - 提示词正文里引用的命令（图谱服务、wiki 检索等）属于你自己的环境——它们只是文本，插件不执行任何东西。
@@ -144,6 +144,8 @@ dsh plugin --profile web add /path/to/dsh-prompt-injector
 ## 开发与测试
 
 ```bash
+npm test                          # 下面三套按序全跑
+node --test test/entry.test.mjs   # 真宿主入口加载 + engines 区间 + 三处键集合一致（先跑）
 node --test test/smoke.mjs        # host 逻辑：默认值/归一化/注入决策/压缩代际
 node --test test/entry-smoke.mjs  # host 入口加载 + pre-step/compaction 端到端
 node test/client-smoke.mjs        # client bundle：slot 契约/翻译/卡片渲染/trigger 下拉
@@ -151,7 +153,7 @@ node test/client-smoke.mjs        # client bundle：slot 契约/翻译/卡片渲
 
 结构：
 
-- `src/index.js` — 插件入口：`settings.installSection` 接线（dsh 0.1.2-alpha.3+）+ `agent/pre-step` 注入 + agent hooks/backfill。
+- `src/index.js` — 插件入口：`settings.installSection` 接线（dsh 0.1.2-alpha.3+，0.1.5-rc.1 无变化）+ `agent/pre-step` 注入 + agent hooks/backfill。
 - `src/logic.js` — 零依赖纯逻辑（默认提示词 / `normPrompts` / `isTrivialPrompt` / `makePromptMessage` / `shouldInject` / `selectPrompts` 代际选择器）。
 - `lib/client.js` — 设置卡（总开关 + 琐碎过滤 + 提示词列表编辑器），`PInj_` 前缀样式防冲突。
 

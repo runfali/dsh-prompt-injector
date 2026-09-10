@@ -1,16 +1,18 @@
 # Install / Start / Uninstall Evidence (Disposable Profile)
 
-> 一次性 Profile 安装、启动、卸载全链路证据。2026-09-02，隔离 DSH_HOME，未触碰任何已部署的 dsh 实例。
+> 一次性 Profile 安装、启动、卸载全链路证据。初版 2026-09-02（dsh 0.1.2-alpha.4），
+> 2026-09-10 在 **dsh 0.1.5-rc.1** 上重跑（隔离 DSH_HOME + 独立端口，未触碰任何已部署的 dsh 实例）。
 
 ## Environment
 
 | Item | Value |
 |---|---|
-| dsh host | @deepseek-ai/dsh 0.1.2-alpha.4 |
+| dsh host (current) | @deepseek-ai/dsh **0.1.5-rc.1** |
+| dsh host (first run) | @deepseek-ai/dsh 0.1.2-alpha.4 |
 | Node.js | v24.19.0 |
 | pnpm | 11.22.0 (forwarded by `dsh plugin`) |
 | Isolated home | DSH_HOME=$WORK/.dsh-pi-evidence (never /root/.dsh) |
-| Plugin under test | dsh-prompt-injector 0.2.0 (local directory install) |
+| Plugin under test | dsh-prompt-injector **0.1.5-rc.1** (local directory install) |
 
 ## Manifest compatibility declaration
 
@@ -19,19 +21,19 @@ Declared in `package.json` (machine-readable):
 ```jsonc
 "engines": { "node": "^22.19.0 || >=24.0.0" },
 "peerDependencies": {
-  "@deepseek-ai/dsh-settings": ">=0.1.2-alpha.3 <0.2.0",
+  "@deepseek-ai/dsh-settings": ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6",
   "@deepseek-ai/schemastery": "^3.18.2",
   "react": "^18.0.0"
 },
 "dsh": {
-  "engines": { "dsh": ">=0.1.2-alpha.3 <0.2.0" },
+  "engines": { "dsh": ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6" },
   "bundle": { "patch": "./cordis.patch.yml" },
   "client": { "platform": "web" }
 }
 ```
 
 - **Node.js range**: `^22.19.0 || >=24.0.0` (same convention as published dsh community plugins; verified on v24.19.0).
-- **DSH range**: `>=0.1.2-alpha.3 <0.2.0` under `dsh.engines.dsh` — adapted to the 0.1.2-alpha.3 settings contract (`settings.installSection`), verified on 0.1.2-alpha.4.
+- **DSH range**: `>=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6` under `dsh.engines.dsh` — adapted to the 0.1.2-alpha.3 settings contract (`settings.installSection`), verified on 0.1.2-alpha.4 **and 0.1.5-rc.1**. The disjunction is load-bearing: npm semver satisfies a prerelease only from a range group that itself contains a prerelease with the same `[major,minor,patch]` tuple, so the plain `<0.2.0` group does not cover `0.1.5-rc.1`. `test/entry.test.mjs` pins this with a 10-row decision table plus a counter-proof against the old single range.
 - **Supply chain**: zero `dependencies`, zero `optionalDependencies`. The three peers (`@deepseek-ai/dsh-settings`, `@deepseek-ai/schemastery`, `react`) are all provided by the dsh host install itself; the plugin ships no bundled or vendored copies. No `postinstall`/`preinstall` scripts, no install-time network calls, no runtime network calls, no child processes, no filesystem writes (settings persistence is performed by the dsh settings service, not the plugin).
 
 ## 1. Install

@@ -98,9 +98,15 @@ redlines, reply style…), add a prompt in the settings page.
 ## Requirements
 
 - DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3** (web profile), Node.js
-  `^22.19.0 || >=24.0.0`. Verified on dsh 0.1.2-alpha.4 / Node v24.19.0 — a
-  disposable-profile install/start/uninstall evidence transcript is in
-  [docs/EVIDENCE.md](docs/EVIDENCE.md).
+  `^22.19.0 || >=24.0.0`. The machine-readable range is
+  `dsh.engines.dsh: ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6"` —
+  the disjunction is required because npm semver only lets a **prerelease** be
+  satisfied by a range that carries a prerelease with the same
+  `[major,minor,patch]` tuple, so the plain `<0.2.0` range alone would not
+  cover `0.1.5-rc.1`. Verified on dsh **0.1.5-rc.1** / Node v24.19.0 (and
+  earlier on 0.1.2-alpha.4) — a disposable-profile install/start/uninstall
+  transcript is in [docs/EVIDENCE.md](docs/EVIDENCE.md), and the real-machine
+  injection run is recorded in [docs/AUDIT.md](docs/AUDIT.md).
 - Runtime dependencies: **none**. The plugin declares three peers only
   (`@deepseek-ai/dsh-settings`, `@deepseek-ai/schemastery`, `react`) — all
   provided by the dsh host install itself.
@@ -203,6 +209,8 @@ worked in practice:
 ## Development & testing
 
 ```bash
+npm test                          # all three suites below, in order
+node --test test/entry.test.mjs   # real host-entry load + engines range + key-set parity (run first)
 node --test test/smoke.mjs        # host logic: defaults, normalization, injection decision, generations
 node --test test/entry-smoke.mjs  # host entry load + pre-step/compaction end-to-end
 node test/client-smoke.mjs        # client bundle: slot contract, locale, card rendering, trigger select
@@ -211,7 +219,8 @@ node test/client-smoke.mjs        # client bundle: slot contract, locale, card r
 Layout:
 
 - `src/index.js` — plugin entry: `settings.installSection` wiring (dsh
-  0.1.2-alpha.3+) + `agent/pre-step` injection + agent hooks/backfill.
+  0.1.2-alpha.3+; unchanged in 0.1.5-rc.1) + `agent/pre-step` injection +
+  agent hooks/backfill.
 - `src/logic.js` — zero-dependency pure logic (defaults, `normPrompts`,
   `isTrivialPrompt`, `makePromptMessage`, `shouldInject`, `selectPrompts`
   generation selector).
