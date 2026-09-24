@@ -6,7 +6,7 @@
  * 执行 apply，验证：
  * 1. bundle id 与包名一致（dsh-client-modules 契约）
  * 2. locale 词典注册（zh/en 键集合一致、覆盖全部 label/hint/UI 文案）
- * 3. settingsScope 绑定 namespace=prompt-injector
+ * 3. configForms.get 绑定 namespace=prompt-injector（0.1.7：settingsScope 已移除）
  * 4. settings.plugin.item 槽位注册：key/locale 正确，inject() 提供 hooks+actions
  * 5. 卡片渲染：展开态包含「添加提示词」按钮、布尔字段、提示词行
  */
@@ -82,7 +82,7 @@ assert.equal(bundleId, 'dsh-prompt-injector', 'bundle id 必须等于包名'); o
 assert.ok(bundleFactory, 'factory 存在')
 
 const exportsRef = bundleFactory(requireStub)
-assert.equal(exportsRef.inject.length, 3, 'inject 服务数'); ok('exports.inject = [slots, locale, settingsScope]')
+assert.equal(exportsRef.inject.length, 3, 'inject 服务数'); ok('exports.inject = [slots, locale, configForms]')
 
 // ---- 桩环境：settingsScope + locale + slots ----
 const localeDicts = {}
@@ -120,10 +120,20 @@ const slotsStub = {
   },
   register(def, component) { return { def, component } }
 }
+// 0.1.7 configForms 契约：get(ns) 返回 ConfigFormController（scope 同形）；
+// whileServed(namespaces, register) 在命名空间被服务时执行 register 回调。
+const configFormsStub = {
+  get(ns) { boundNamespace = ns; return scopeStub },
+  whileServed(namespaces, register) { register(); return () => {} }
+}
 const ctxStub = {
   effect(fn) { return fn() },
-  locale: { register(ns, dict) { localeDicts[ns] = dict } },
-  settingsScope: scopeStub,
+  locale: {
+    register(ns, dict) { localeDicts[ns] = dict },
+    // 0.1.7：label thunk 经 locale.bind(NS) 现读（列表页标题随 locale 刷新）
+    bind(ns) { return (key, params) => { const d = localeDicts[ns] || {}; let v = d[key] || key; if (params && typeof params.n === 'number') v = v.replace('{n}', String(params.n)); return v } }
+  },
+  configForms: configFormsStub,
   slots: slotsStub
 }
 
@@ -143,16 +153,18 @@ for (const key of ['card.title', 'card.promptCount', 'field.enabled', 'hint.enab
 }
 ok('关键翻译键齐全')
 
-console.log('== settingsScope ==')
+console.log('== configForms.get(ns) ==')
 assert.equal(boundNamespace, 'prompt-injector', 'namespace 必须 = prompt-injector')
-ok('namespace = prompt-injector')
+ok('configForms.get 绑定 namespace = prompt-injector')
 
 console.log('== slot ==')
-assert.equal(slotEntry.slot, 'settings.plugin.item', 'slot 类型')
+assert.equal(slotEntry.slot, 'plugins.item', 'slot 类型（0.1.7 设置卡迁入插件页 plugins.item）')
 const injected = slotEntry.reg
-assert.equal(injected.def.name, 'settings.plugin.item')
-assert.equal(injected.def.key, 'prompt-injector')
+assert.equal(injected.def.name, 'plugins.item')
+assert.equal(injected.def.id, 'prompt-injector', '注册 id 必须 = 行 id（ItemDetail 表单按 id 匹配 ns）')
 assert.equal(injected.def.locale, 'prompt-injector')
+assert.ok(typeof injected.def.label === 'function', 'label thunk 必须提供（列表页标题）')
+assert.ok(injected.def.order !== undefined, 'order 必须提供（列表页排序）')
 const payload = injected.def.inject()
 assert.ok(payload.hooks && payload.hooks.promptInjector, 'hooks.promptInjector 提供')
 assert.equal(typeof payload.edit, 'function')

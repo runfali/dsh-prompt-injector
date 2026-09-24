@@ -1,0 +1,78 @@
+# dsh 0.1.7-rc.1 适配说明（dsh-prompt-injector）
+
+对象：本机全局 `@deepseek-ai/dsh@0.1.7-rc.1`。本仓适配基线：0.1.5-rc.1。
+
+## 契约比对结论（与门卫插件适配轮共享的通用结论，此处只列与本插件相关的差异）
+
+### 1. 宿主 settings 模型重做（唯一硬破坏）⚠️
+
+| 项 | 0.1.5-rc.1 | 0.1.7-rc.1 |
+|---|---|---|
+| 命名空间注册 | `settings.installSection(owner, ns, schema, entry, hooks)`（setSource/onChange 回调维持 current()） | **已移除**。`settings.describe()` 直接枚举「active 且含 volatile 字段 Config」的入口；`ns = cordis 行 id` |
+| 可热编辑字段 | 整段 schema 即 scope | 字段必须 `.volatile()`；volatile-only 变更经 loader `_commitVolatile` **原地提交**（不重启 fiber），其余字段变更走 fiber 重启 |
+| apply 收到的值 | 普通值 | **volatile 字段是 `{get()}` 活引用**（cosmokit `createVolatile` 协议） |
+| 展示策略 | installSection 即卡片 | 默认按 schema 自动生成页；`settings.configure({auto:false}, fiber)` 关闭 |
+| 宿主设置服务面 | — | `configure` / `describe` / `update` / `replace` / `mutate`（SettingsForms） |
+
+### 2. 浏览器 settings 通道（第二处硬破坏）⚠️
+
+| 项 | 0.1.5-rc.1 | 0.1.7-rc.1 |
+|---|---|---|
+| scope 服务 | `settingsScope`（`bind({namespace})`） | **已移除** → `configForms.get(ns)`（ConfigFormController） |
+| scope API | getSnapshot/set/unset/subscribe | 同名同形 + `mutate(ops, revision)`；快照多 `base/revision/mode`（PIForm 只读 status/value/user/writable，兼容） |
+| 设置卡槽位 | `settings.plugin.item`（设置页，keyed，key=NS） | **已移除** → `plugins.item`（插件页，list，`id`=行 id，`label` thunk，`order`） |
+| 注册时机 | 直接注册 | `configForms.whileServed([NS], register)` 门控：宿主开始服务 ns 才注册，停服自动摘除 |
+| hooks→props | `hooks.promptInjector` → `usePromptInjector` | 不变（PropsSlotHooks `use${Capitalize<N>{'}'}`） |
+
+### 3. 兼容校验强制化（同门卫适配轮）⚠️
+
+- `peerDependencies` 里的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` 条目在安装 preflight
+  （插件管理器）与启动 preflight（profile 兼容检查）被消费，
+  `semver.satisfies(runtimeVersion, range, { includePrerelease: true })`。
+- 本仓 peer 区间（`@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-settings` 同款）：
+  `>=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8`
+  —— dsh 侧 includePrerelease 放行 0.1.2-alpha.3~0.1.7 全段；pnpm 严格 semver 下
+  0.1.5-rc.* 与 0.1.7-rc.* 各需同元组预发布下界；上界 <0.1.8 先验证再放行。
+- schemastery peer 收紧为 `~3.18.4`：`.volatile()` 是 3.18.4 新增 API（3.18.2 没有），
+  与 dsh 0.1.7 自身的依赖声明对齐。
+- 用宿主自带 semver + dsh-app-boot `evaluatePluginCompatibility` 实测：
+  0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.7-rc.1 ✅；0.1.8 ❌（正确拒绝）。
+
+### 4. 注入链契约（agent 半）：零漂移 ✅
+
+- `agent/pre-step` payload `{agent, messages, signal, step}`、decision `{kind:'enter', messages}`
+  追加形态不变（dsh-agent 源码级复核，宿主自用的 modelSwitchNotice 同链路）。
+- `agent/created`（`{agent, source}`）+ `agents.list()` 补挂不变（dsh-agent AgentsService）。
+- `session/event` 载荷 `[session, event]`、`compaction/summary` 事件 `data`
+  嵌套形状不变（dsh-session append / dsh-compaction-basic 源码级复核）。
+- `session/disposed`（载荷 `[session]`）不变。
+- 注入形态 `user / source.kind:'plugin' / form:'notice' / summary=标题` 不变。
+
+## 改动清单
+
+1. `src/index.js`：删除 installSection 接线；Config 三个可编辑字段加 `.volatile()`；
+   `ctx.inject(['settings'])` 改为注册 `{auto:false}` 展示策略；新增 `readField()`
+   统一解引用（volatile 引用 `.get()`，普通值透传，两种宿主形状兼容）。
+2. `lib/client.js`：`settingsScope.bind` → `ctx.configForms.get(NS)`；设置卡从
+   `settings.plugin.item`（keyed/key）迁到 `plugins.item`（list/id + label thunk + order）；
+   注册包进 `configForms.whileServed([NS], ...)`；inject 声明 `settingsScope` → `configForms`。
+3. `package.json`：版本 0.1.7-rc.1；`dsh.engines.dsh` 三 clause；peer 新增
+   `@deepseek-ai/dsh`（兼容闸必读）、`@deepseek-ai/dsh-settings` 区间同款、
+   schemastery 收紧 `~3.18.4`。
+4. `test/entry.test.mjs`：版本守卫 0.1.7-rc.1；engines 判定表加 0.1.7-rc.1/0.1.7（含）
+   与 0.1.8/0.1.8-rc.1（排除）行；peer 断言加 dsh peer 与 0.1.7-rc.1 覆盖；
+   settings 桩改 `configure({auto:false})` 契约；4c 用例改传 volatile `{get()}` 引用。
+5. `test/client-smoke.mjs`：configForms 桩（get/whileServed）、plugins.item 槽位断言
+   （id/order/label thunk）、locale.bind 桩。
+6. `pnpm-workspace.yaml`：allowBuilds 落定 false（测试无需原生构建）、
+   minimumReleaseAgeExclude 刷到 0.1.7-rc.1 + schemastery 3.18.4。
+7. devDeps：`@deepseek-ai/dsh@0.1.7-rc.1`（entry 真实加载用宿主同版副本）。
+8. README/README.zh-CN：环境要求与兼容区间说明更新。
+
+## 测试
+
+- `pnpm test`：entry.test 13 组（判定表 14 行）+ smoke.mjs 11 例 + client-smoke 14 项 —— 全绿。
+- 真实加载：entry.test 直接 import 宿主入口，在仓库本地 `@deepseek-ai/dsh@0.1.7-rc.1` +
+  `dsh-settings@0.1.7-rc.1` + `schemastery@3.18.4` 副本上跑通（schemastery 3.18.2 无
+  `.volatile` 会当场炸出，正是该测试的职责）。
+- 安装 preflight 模拟（dsh-app-boot evaluatePluginCompatibility）：0.1.7-rc.1 ✅。

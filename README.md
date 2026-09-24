@@ -98,13 +98,17 @@ redlines, reply style…), add a prompt in the settings page.
 ## Requirements
 
 - DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3** (web profile), Node.js
-  `^22.19.0 || >=24.0.0`. The machine-readable range is
-  `dsh.engines.dsh: ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6"` —
-  the disjunction is required because npm semver only lets a **prerelease** be
+  `^22.19.0 || >=24.0.0`. The machine-readable range (both `dsh.engines.dsh`
+  and the `peerDependencies` entries for `@deepseek-ai/dsh` /
+  `@deepseek-ai/dsh-settings`) is
+  `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8"` —
+  the disjunctions exist because npm semver only lets a **prerelease** be
   satisfied by a range that carries a prerelease with the same
-  `[major,minor,patch]` tuple, so the plain `<0.2.0` range alone would not
-  cover `0.1.5-rc.1`. Verified on dsh **0.1.5-rc.1** / Node v24.19.0 (and
-  earlier on 0.1.2-alpha.4) — a disposable-profile install/start/uninstall
+  `[major,minor,patch]` tuple, so `0.1.5-rc.*` and `0.1.7-rc.*` each need
+  their own clause. Since dsh 0.1.7 the `peerDependencies` range is **enforced**
+  at install time (plugin-manager preflight) and at startup (profile
+  compatibility preflight). Verified on dsh **0.1.7-rc.1** (and earlier on
+  0.1.5-rc.1 / 0.1.2-alpha.4) — a disposable-profile install/start/uninstall
   transcript is in [docs/EVIDENCE.md](docs/EVIDENCE.md), and the real-machine
   injection run is recorded in [docs/AUDIT.md](docs/AUDIT.md).
 - Runtime dependencies: **none**. The plugin declares three peers only

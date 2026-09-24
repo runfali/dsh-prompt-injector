@@ -6,13 +6,22 @@
  * enabled 提示词 → 每轮对话追加一条 notice 行（summary 即标题，UI 自动加
  * 「上下文注入」前缀与插件名）。
  *
- * 配置（设置页可编辑，settings.yaml 用户层持久化）：
+ * 配置（插件页设置卡可编辑，profile 用户层持久化）：
  *   enabled      —— 总开关
  *   skipTrivial  —— 琐碎轮（问候/确认/继续等）是否跳过注入，默认 true
  *   prompts[]    —— 提示词列表 { id, title, text, enabled, trigger }，trigger:
  *                   'everyTurn'（默认，每轮注入）| 'postCompaction'（压缩代际
  *                   推进后的下一 freshUser 轮注入一次，同代不重复）。默认列表为
  *                   空（2026-08-29 开源决策）：只留机制不预设内容，用户自填自选。
+ *
+ * 0.1.7-rc.1 契约复核（逐包源码比对，本仓库 0.1.7 适配轮）：
+ * - dsh-settings 的 installSection()/settingsNamespace() 通道已移除。0.1.7 的
+ *   settings.describe() 直接枚举「active 且带 volatile 字段的 Config」的入口，
+ *   ns = cordis 行 id（本插件即 'prompt-injector'）——Config 声明即命名空间。
+ * - 可热编辑的字段必须 .volatile()：volatile-only 变更经 _commitVolatile 原地
+ *   写入运行中 fiber 的引用（不重启），apply 收到的对应字段是 {get()} 引用。
+ * - spec() 统一经 readField() 解引用：volatile 引用 .get()，普通值原样透传，
+ *   两种宿主形状都兼容。
  *
  * 压缩代际来源：session/event 的 compaction/summary 事件（C0 实证载荷，零 LLM）。
  *
@@ -21,6 +30,16 @@
 
 import z from '@deepseek-ai/schemastery'
 import { DEFAULT_PROMPTS, normPrompts, freshUserOf, selectPrompts, makePromptMessage } from './logic.js'
+
+/** 读取配置字段：0.1.7 起 volatile 字段经 apply 收到的是 {get()} 活引用
+ * （cosmokit createVolatile 协议：对象含 write symbol），普通字段是裸值。
+ * 统一在此解引用，新旧宿主形状都兼容。 */
+function readField(value) {
+  if (value !== null && typeof value === 'object' && typeof value.get === 'function' && !Array.isArray(value)) {
+    return value.get()
+  }
+  return value
+}
 
 /** Settings 命名空间（浏览器卡片与 host 共用同一字符串）。
  * dsh 0.1.2-alpha 起 settingsNamespace() brand 辅助已从 dsh-settings 移除；
@@ -38,9 +57,11 @@ const PromptSchema = z.object({
 })
 
 const Config = z.object({
-  enabled: z.boolean().default(true),
-  skipTrivial: z.boolean().default(true),
-  prompts: z.array(PromptSchema).default(DEFAULT_PROMPTS)
+  // 0.1.7 起：volatile 字段才能在插件页设置卡热编辑（_commitVolatile 原地提交，
+  // 不重启 fiber）；非 volatile 字段的变更会走整条 fiber 重启链。
+  enabled: z.boolean().default(true).volatile(),
+  skipTrivial: z.boolean().default(true).volatile(),
+  prompts: z.array(PromptSchema).default(DEFAULT_PROMPTS).volatile()
 })
 
 // settings 接线在 apply 内经 ctx.inject(['settings']) 完成（服务解析时回调），
@@ -48,30 +69,24 @@ const Config = z.object({
 export const inject = ['agents']
 
 export function apply(ctx, config = {}) {
-  let current = () => config
-  // dsh 0.1.2-alpha：独立 installSettingsSection 帮助函数已从 dsh-settings 移除，
-  // 同样的接线改为 provider 上的 settings.installSection(owner, ns, schema, entry, hooks)
-  // （源码级核对：register(base=entry) → setSource(scope.get) → 卸载回落 effect →
-  // onChange() 同步首发 → scope.watch 持续通知）。
-  // hooks 在 inject 回调内执行——此处 onChange 为空操作、setSource 只赋值上方
-  // 已声明的 current，无 TDZ 风险，故保持原位置。
+  // 0.1.7 起：不再有 installSection。Config 声明即设置命名空间（ns = 行 id
+  // 'prompt-injector'），volatile 字段的活引用由宿主经 configEditor.edit →
+  // _commitVolatile 原地更新，插件侧每轮 .get() 现读即可，无需订阅。
+  // 注册 {auto:false} 展示策略：关闭宿主按 schema 自动生成的默认页，
+  // 设置卡由 client 半注册进插件页 plugins.item 槽位（与官方插件一致）。
   ctx.inject(['settings'], (sctx) => {
-    sctx.settings.installSection(ctx, PROMPT_INJECTOR_NAMESPACE, Config, config, {
-      setSource: (source) => {
-        current = source
-      },
-      onChange: () => {
-        // 各消费点每轮读取 current()，无需主动刷新
-      }
-    })
+    sctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber))
   })
+
+  // current 指向 config 对象本身；volatile 字段经 readField 现读活引用。
+  let current = () => config
 
   const spec = () => {
     const value = current() || {}
     return {
-      enabled: value.enabled !== false,
-      skipTrivial: value.skipTrivial !== false,
-      prompts: normPrompts(value.prompts)
+      enabled: readField(value.enabled) !== false,
+      skipTrivial: readField(value.skipTrivial) !== false,
+      prompts: normPrompts(readField(value.prompts))
     }
   }
 

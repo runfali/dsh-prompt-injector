@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-injector",
-  "version": "0.1.5-rc.1",
+  "version": "0.1.7-rc.1",
   "description": "Generic per-turn prompt injector for the DeepSeek Harness web profile — manage a list of context prompts (with enable switch) in the settings page; every round of conversation injects each enabled prompt as a notice line (「上下文注入 xxx」) into the model context, exactly like the mem0 recall reminder. Host-only logic + client settings card; zero dsh source changes.",
   "type": "module",
   "main": "src/index.js",
@@ -34,13 +34,14 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-settings": ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6",
-    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/dsh": ">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8",
+    "@deepseek-ai/dsh-settings": ">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8",
+    "@deepseek-ai/schemastery": "~3.18.4",
     "react": "^18.0.0"
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.1.2-alpha.3 <0.2.0 || >=0.1.5-alpha.1 <0.1.6"
+      "dsh": ">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -52,5 +53,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/runfali/dsh-prompt-injector.git"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.1"
   }
 }

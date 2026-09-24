@@ -46,13 +46,13 @@ ok('宿主入口真实 import 成功（apply / 命名空间 / inject 面齐备�
 // 见第 3 节（stub 里以 undefined config 驱动，断言默认语义）与第 4 节（文案漂移）。
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(typeof pkg.version, 'string', 'package.json 缺 version')
-assert.equal(pkg.version, '0.1.5-rc.1', '版本号必须跟宿主发布号（家族惯例）')
+assert.equal(pkg.version, '0.1.7-rc.1', '版本号必须跟宿主发布号（家族惯例）')
 assert.equal(pkg.type, 'module', '必须是 ESM 包')
 assert.equal(pkg.exports['.'], './src/index.js', 'exports["."] 必须指向宿主入口')
 assert.equal(pkg.exports['./client'], './lib/client.js', 'exports["./client"] 必须指向 client bundle')
 assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml', 'dsh.bundle.patch 必须声明（装上≠挂载：无声明不进组合树）')
 assert.equal(pkg.dsh.client.platform, 'web', 'dsh.client.platform 必须是 web')
-ok('package.json 入口/导出/挂载声明齐备，版本号 0.1.5-rc.1')
+ok('package.json 入口/导出/挂载声明齐备，版本号 0.1.7-rc.1')
 
 // ---------------------------------------------------------------------------
 // 3. dsh.engines.dsh 区间守护（内置判定表，不引 semver 依赖，防测试随依赖漂移）
@@ -131,14 +131,18 @@ const TABLE = [
   ['0.1.5-rc.1', true],
   ['0.1.5', true],
   ['0.1.6', true],
+  ['0.1.7-rc.1', true],
+  ['0.1.7', true],
   ['0.1.3-alpha.1', false],
+  ['0.1.8', false],
+  ['0.1.8-rc.1', false],
   ['0.2.0', false],
   ['0.0.1', false]
 ]
 for (const [version, expected] of TABLE) {
   assert.equal(satisfies(version, range), expected, 'engines 区间对 ' + version + ' 的判定应为 ' + expected + '（区间=' + range + '）')
 }
-ok('engines 判定表 10 行逐行通过（含 0.1.5-rc.1 覆盖）')
+ok('engines 判定表 ' + TABLE.length + ' 行逐行通过（含 0.1.5-rc.1 / 0.1.7-rc.1 覆盖，0.1.8 排除）')
 
 // 反证：旧单区间不覆盖 0.1.5-rc.1 —— 这正是本次必须加析取的原因
 assert.equal(satisfies('0.1.5-rc.1', '>=0.1.2-alpha.3 <0.2.0'), false, '旧单区间本不应覆盖 0.1.5-rc.1，判定器写反了')
@@ -154,7 +158,7 @@ if (semver && typeof semver.satisfies === 'function') {
   for (const [version, expected] of TABLE) {
     assert.equal(semver.satisfies(version, range), expected, '宿主 semver 对 ' + version + ' 的判定与内置判定表不一致')
   }
-  ok('内置判定器与宿主真实 semver.satisfies 逐行一致（' + TABLE.length + '/' + TABLE.length + '）')
+  ok('内置判定器与宿主真实 semver.satisfies 逐行一致（' + TABLE.length + ' 行）')
 } else {
   ok('宿主 semver 不可解析，跳过交叉验证（不假绿）')
 }
@@ -163,27 +167,34 @@ if (semver && typeof semver.satisfies === 'function') {
 const peerSettings = pkg.peerDependencies['@deepseek-ai/dsh-settings']
 assert.equal(typeof peerSettings, 'string', 'peerDependencies 缺 @deepseek-ai/dsh-settings')
 assert.equal(satisfies('0.1.5-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.1.5-rc.1：' + peerSettings)
-ok('peerDependencies 区间同样覆盖 0.1.5-rc.1')
+assert.equal(satisfies('0.1.7-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.1.7-rc.1：' + peerSettings)
+// 0.1.7 起 @deepseek-ai/dsh peer 是安装/启动兼容闸的判定对象，必须声明且覆盖 0.1.7-rc.1
+const peerDsh = pkg.peerDependencies['@deepseek-ai/dsh']
+assert.equal(typeof peerDsh, 'string', 'peerDependencies 缺 @deepseek-ai/dsh（0.1.7 兼容闸必读）')
+assert.equal(satisfies('0.1.7-rc.1', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.1.7-rc.1：' + peerDsh)
+ok('peerDependencies 区间覆盖 0.1.5-rc.1 与 0.1.7-rc.1（dsh + dsh-settings 双 peer）')
 
 // ---------------------------------------------------------------------------
 // 4. apply 端到端：真入口 + 最小桩，断言默认语义（未配置 = 不注入任何提示词）
 // ---------------------------------------------------------------------------
 function makeCtx() {
-  const seen = { listeners: new Map(), injects: [], installSection: 0 }
-  const installSectionStub = (owner, ns, schema, entry, hooks) => {
-    seen.installSection += 1
-    seen.ns = ns
-    seen.entry = entry
-    // 0.1.5-rc.1 真实语义（dsh-settings/lib/index.js installSection 源码级对照）：
-    // register(base=entry) → setSource(scope.get) → 卸载回落 effect → onChange 首发 → watch 持续通知
-    hooks.setSource(() => entry)
-    hooks.onChange()
+  const seen = { listeners: new Map(), injects: [], configure: 0, autoPolicy: undefined }
+  // 0.1.7-rc.1 真实语义（dsh-settings SettingsForms.configure 源码级对照）：
+  // 宿主不再有 installSection；插件经 ctx.inject(['settings']) 调
+  // settings.configure({auto:false}, ownerFiber) 关闭自动默认页。
+  const settingsStub = {
+    configure(presentation, owner) {
+      seen.configure += 1
+      seen.autoPolicy = presentation && presentation.auto
+      return () => {}
+    }
   }
   const ctx = {
     logger: { debug: () => {}, info: () => {}, warn: () => {} },
+    fiber: { id: 'test-fiber' },
     effect: (fn) => { fn(); return () => {} },
     on: (evt, fn) => { seen.listeners.set(evt, fn); return () => {} },
-    inject: (services, cb) => { seen.injects.push(services); cb({ settings: { installSection: installSectionStub }, effect: ctx.effect, on: ctx.on }); return () => {} }
+    inject: (services, cb) => { seen.injects.push(services); cb({ settings: settingsStub, effect: ctx.effect, on: ctx.on, fiber: ctx.fiber }); return () => {} }
   }
   return { ctx, seen }
 }
@@ -192,8 +203,8 @@ function makeCtx() {
 {
   const { ctx, seen } = makeCtx()
   mod.apply(ctx, {})
-  assert.equal(seen.installSection, 1, 'apply 必须经 ctx.inject(["settings"]) 调 installSection 一次')
-  assert.equal(seen.ns, 'prompt-injector', 'installSection 命名空间传错')
+  assert.equal(seen.configure, 1, 'apply 必须经 ctx.inject(["settings"]) 调 settings.configure 一次')
+  assert.equal(seen.autoPolicy, false, '必须注册 {auto:false}（关闭宿主自动默认页，卡片由 client 半提供）')
   assert.deepEqual(seen.injects, [['settings']], 'apply 内必须等待式注入 settings 服务')
   const agent = { id: 'session-1', ctx: { on: (evt, fn) => { seen.listeners.set('agent:' + evt, fn); return () => {} } } }
   seen.listeners.get('agent/created')({ agent })
@@ -217,9 +228,11 @@ function makeCtx() {
 }
 
 // 4c. 配置条目 → 注入 notice 行（summary 只放标题，不带 UI 前缀）
+// 0.1.7：volatile 字段经 apply 收到 {get()} 活引用——同时验证解引用兼容。
 {
   const { ctx, seen } = makeCtx()
-  mod.apply(ctx, { enabled: true, skipTrivial: true, prompts: [{ id: 'a', title: 'Pre-check', text: 'body', enabled: true }] })
+  const volatileOf = (v) => ({ get: () => v })
+  mod.apply(ctx, { enabled: volatileOf(true), skipTrivial: volatileOf(true), prompts: volatileOf([{ id: 'a', title: 'Pre-check', text: 'body', enabled: true }]) })
   const agent = { id: 'session-3', ctx: { on: (evt, fn) => { seen.listeners.set('agent:' + evt, fn); return () => {} } } }
   seen.listeners.get('agent/created')({ agent })
   const preStep = seen.listeners.get('agent:agent/pre-step')
