@@ -36,13 +36,23 @@ assert.equal(mod.PROMPT_INJECTOR_NAMESPACE, 'prompt-injector', '设置命名空�
 assert.ok(Array.isArray(mod.inject), 'inject 必须是数组')
 for (const svc of mod.inject) assert.equal(typeof svc, 'string', 'inject 项必须是字符串')
 assert.deepEqual([...mod.inject].sort(), ['agents'], 'inject 面必须恰为 agents（settings 经 apply 内 ctx.inject 等待式注入，不写进顶层声明）')
-ok('宿主入口真实 import 成功（apply / 命名空间 / inject 面齐备）')
+
+// 0.1.7 守护：Config 必须从模块导出且可编辑字段必须 volatile ——
+// dsh-settings describe() 只收录「runtime.Config 有 volatileForm」的入口；
+// 未导出 Config = 命名空间消失 = client 半 whileServed 永不注册 = 插件页无配置入口
+// （真机回归 P1：885be35 后发现）。
+assert.ok(mod.Config, 'src/index.js 必须导出 Config（0.1.7 settings 命名空间来源）')
+assert.equal(typeof mod.Config.dict?.enabled?.meta?.volatile, 'boolean', 'Config 结构异常')
+for (const key of ['enabled', 'skipTrivial', 'prompts']) {
+  assert.equal(mod.Config.dict?.[key]?.meta?.volatile, true, 'Config.' + key + ' 必须 .volatile()（0.1.7 热编辑契约）')
+}
+ok('宿主入口真实 import 成功（apply / 命名空间 / inject / Config 导出 + volatile 齐备）')
 
 // ---------------------------------------------------------------------------
 // 2. 设置命名空间 schema：可交叉验证的默认值表
 // ---------------------------------------------------------------------------
-// 本插件未导出 Config，从宿主真实 schemastery 副本重建同名 schema 只能验证库行为，
-// 无法验证本仓 schema —— 故改为「配置文件契约 + apply 端到端默认值」双重证据：
+// Config 现已导出（0.1.7 守护见第 1 节）；schema 行为细节由「配置文件契约 +
+// apply 端到端默认值」双重证据覆盖：
 // 见第 3 节（stub 里以 undefined config 驱动，断言默认语义）与第 4 节（文案漂移）。
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(typeof pkg.version, 'string', 'package.json 缺 version')

@@ -56,9 +56,12 @@ const PromptSchema = z.object({
   trigger: z.string().default('everyTurn')
 })
 
-const Config = z.object({
-  // 0.1.7 起：volatile 字段才能在插件页设置卡热编辑（_commitVolatile 原地提交，
-  // 不重启 fiber）；非 volatile 字段的变更会走整条 fiber 重启链。
+// 0.1.7 起：Config 必须从模块导出（cordis runtime.Config）——dsh-settings 的
+// describe() 按「entry 有 volatileForm(schema)」枚举命名空间，未导出 = 宿主看不到
+// 本命名空间 = client 半 whileServed 永不注册（插件页无配置入口）。
+// volatile 字段才能在插件页设置卡热编辑（_commitVolatile 原地提交，不重启 fiber）；
+// 非 volatile 字段的变更会走整条 fiber 重启链。
+export const Config = z.object({
   enabled: z.boolean().default(true).volatile(),
   skipTrivial: z.boolean().default(true).volatile(),
   prompts: z.array(PromptSchema).default(DEFAULT_PROMPTS).volatile()

@@ -110,3 +110,28 @@ ctx.effect(() => ctx.configForms.whileServed([NS], () => ctx.slots.inject("plugi
 
 测试：client-smoke 的 slots 桩同步改新契约（`inject(key, cb) → cb() 返回注册值`），
 全套 13 组 + 11 例 + 14 项全绿。
+
+
+## 第三轮（真机回归 P1）：Config 未导出导致命名空间不可见 ⚠️
+
+症状（用户截图）：插件页里插件行能进详情页，但配置区只有启用/停用，没有设置卡。
+
+完整链条（源码级溯源）：
+
+1. `dsh-settings` `describe()` 枚举命名空间的唯一插件侧条件：
+   `schema(entry) = entry.fiber.runtime.Config`（cordis `runtime = { Config: plugin.Config }`，
+   `plugin` 即模块导出对象经 `unwrapExports` 透传）→ `volatileForm(schema) !== undefined`。
+2. `Config` 未从模块导出 → `runtime.Config === undefined` → `schema(entry)` 返回 undefined →
+   入口被 describe() 过滤 → ns 不在设置视图。
+3. client 半 `configForms.whileServed([NS], ...)` 依赖 mirror 视图（describe 结果）里出现 ns 才注册 →
+   永不注册 → `plugins.item` 槽位无条目 → 插件页无配置入口（只有宿主自动渲染的启用/停用行）。
+
+修复：`export const Config`（0.1.7 的 settings 命名空间来源）。entry.test 加守护断言：
+Config 必须导出且三个可编辑字段必须 `.volatile()`。
+
+### 附带确认（0.1.7 生效路径纪律）
+
+- link 插件的 **host 半代码变更不能热生效**：dsh-hmr 监听的是 dsh 安装目录模块；profile patch
+  touch 只在 config 值实际变化时触发 fiber 重启（`equalExceptVolatile` 短路）。因此 host 半
+  修复后必须重启 dsh。
+- client 半变更（lib/client.js）随页面刷新生效（client-modules graph rev 变化）。
