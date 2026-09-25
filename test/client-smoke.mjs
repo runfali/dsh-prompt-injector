@@ -114,9 +114,11 @@ const scopeStub = {
 }
 let slotEntry = null
 const slotsStub = {
-  inject(slot, generator) {
-    const iterator = generator()
-    for (const reg of iterator) slotEntry = { slot, reg }
+  // 0.1.7 契约：inject(key, callback) —— callback 返回 disposer（注册即返回值）
+  inject(slot, callback) {
+    const reg = callback()
+    slotEntry = { slot, reg }
+    return () => {}
   },
   register(def, component) { return { def, component } }
 }

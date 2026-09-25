@@ -76,3 +76,37 @@
   `dsh-settings@0.1.7-rc.1` + `schemastery@3.18.4` 副本上跑通（schemastery 3.18.2 无
   `.volatile` 会当场炸出，正是该测试的职责）。
 - 安装 preflight 模拟（dsh-app-boot evaluatePluginCompatibility）：0.1.7-rc.1 ✅。
+
+
+## 追加轮（真机回归发现的第二处硬破坏）：slots.inject 回调形态 ⚠️
+
+首轮适配后真机验证发现：插件页里插件只有开关行、点不进详情页（截图证据）。
+
+根因：0.1.5 的 `ctx.slots.inject(name, function* () { yield register(...) })` 是 **generator 形态**；
+0.1.7 改为 **「返回 disposer 的普通函数」**（`dsh-client-ui-renderer` 的
+`inject(key, callback)` 实现把 callback 直接交给 `ctx.effect(callback)`，
+callback 的返回值即注册 disposer）。传 generator 会被当普通回调调用——
+`register` 永不执行，槽位条目不存在 → 插件管理页 `ledger.items` 没有本插件 →
+没有可点击的详情入口。0.1.7 全部官方/第三方存活插件（settings-agent-loop、
+theme、locale、@linxin666 三件）都是 `() => register(...)` 箭头形态，无一例外。
+
+修复（对齐官方 agent-loop 接线）：
+
+```js
+ctx.effect(() => ctx.configForms.whileServed([NS], () => ctx.slots.inject("plugins.item",
+  () => ctx.slots.register({ name: "plugins.item", id: NS, order: 30, label, locale, inject }, Card))
+))
+```
+
+同轮对齐的两处渲染细节：
+
+1. **双视图卡片**：插件页对槽位有 `${'{'}view: 'summary' | 'page'{'}'}` 两种渲染
+   （列表卡描述区 / 详情页配置区，ownerProps spread 进组件 props，renderer
+   `renderEntry` 源码级确认）。官方卡片 summary 返回一行描述字符串、page 返回
+   表单。本卡改为同款分支：`view === 'summary'` → `t("card.description")`；
+   page/未传 → 完整表单（根元素 `<li>` → `<div>`，详情页非列表语境）。
+2. **详情页匹配**：`ItemDetail` 用 `renderSlot(..., { only: item.id })` 过滤条目，
+   注册 `id` 必须等于宿主行 id（`prompt-injector`）——首轮已对，本轮加断言固化。
+
+测试：client-smoke 的 slots 桩同步改新契约（`inject(key, cb) → cb() 返回注册值`），
+全套 13 组 + 11 例 + 14 项全绿。
