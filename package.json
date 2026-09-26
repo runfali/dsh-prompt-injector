@@ -19,7 +19,7 @@
     "docs"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs && node test/smoke.mjs && node test/client-smoke.mjs"
+    "test": "node --test test/*.test.mjs && node test/smoke.mjs && node test/entry-smoke.mjs && node test/client-smoke.mjs"
   },
   "license": "MIT",
   "keywords": [

@@ -10,9 +10,9 @@
 web profile 的**通用每轮上下文注入插件**。在设置页维护一份提示词清单，每一轮对话开始时，把每条启用中的提示词以一行紧凑的折叠提醒注入模型上下文（行首「上下文注入」前缀由界面自动添加，行标题即你的提示词标题）——记忆插件所用的同款注入机制，改为可配置复用：任何想约束模型执行的纪律，都能加一条提示词，不必为每条规则单独写插件。
 
 ```text
-[上下文注入 | dsh-prompt-injector] 图谱·Wiki 提醒  ← 每条启用提示词一行，
-[上下文注入 | dsh-prompt-injector] 回复结构 1-2-3   ← 「上下文注入」前缀与插件名
-[上下文注入 | dsh-prompt-injector] 安全红线清单     ← 由界面自动添加，行标题即摘要
+[上下文注入 | plugin:dsh-prompt-injector] 图谱·Wiki 提醒  ← 每条启用提示词一行，
+[上下文注入 | plugin:dsh-prompt-injector] 回复结构 1-2-3   ← 「上下文注入」前缀自动添加，
+[上下文注入 | plugin:dsh-prompt-injector] 安全红线清单     ← 来源段 = 注入消息的 source.kind
 ```
 
 > [!IMPORTANT]
@@ -55,7 +55,8 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 
 ## 工作原理
 
-- **注入点**：`agent/pre-step` → 向 `decision.messages` 追加（与 dsh-mem0-plugins 同一钩子链）。每条启用提示词一条消息，`role: user`，`source: { kind: 'plugin', form: 'notice', summary: '<标题>' }`——UI 折叠显示为「上下文注入 | 插件名 | 标题」，摘要无需展开即见。
+- **注入点**：`agent/pre-step` → 向 `decision.messages` 追加（与 dsh-mem0-plugins 同一钩子链）。每条启用提示词一条消息，`role: user`，`source: { kind: 'plugin:dsh-prompt-injector', form: 'notice', summary: '<标题>' }`——UI 折叠显示为「上下文注入 | 插件名 | 标题」，摘要无需展开即见。
+- **来源 kind（V4 契约）**：`kind` 必须是「生产者自有的 kind」。V4 原生准入拒绝 `kind: 'plugin'`（V3 旧包装，另带一个 `plugin` 字段），报 `format v4 message requires a producer-owned source kind`；这条校验在**写盘路径**上，旧形态会让整轮失败。本插件用 `plugin:<包名>` 命名空间——这正是平台自己把第三方插件 source 迁移到 V4 时采用的形态。
 - **挂载**：监听 `agent/created` 覆盖新 agent，插件启动时 backfill 已有 agent（`WeakSet` 幂等防双触发）。
 - **琐碎判定**：问候/确认/继续词表（移植自 dsh-mem0-plugins，其源头为 hermes `is_trivial_prompt`，MIT）+ 斜杠命令形态；带真实内容的输入绝不误判。
 - **压缩代际**：插件级 `session/event` 监听按会话统计已提交的 `compaction/summary` 事件；`postCompaction` 行每代至多注入一次（按提示词记录已应用代际，`session/disposed` 即清）。旧配置无 `trigger` 字段 = `everyTurn`，零迁移。

@@ -30,6 +30,8 @@ const root = join(here, '..')
 // 1. 真实入口加载（P0 守卫）
 // ---------------------------------------------------------------------------
 const mod = await import('../src/index.js')
+// 注入 source 的生产者 kind 常量来自 logic.js（host 与测试共用的单一事实源）
+const { PROMPT_INJECTOR_SOURCE_KIND } = await import('../src/logic.js')
 assert.equal(typeof mod.apply, 'function', 'src/index.js 必须导出 apply 函数')
 assert.equal(typeof mod.PROMPT_INJECTOR_NAMESPACE, 'string', 'src/index.js 必须导出设置命名空间常量')
 assert.equal(mod.PROMPT_INJECTOR_NAMESPACE, 'prompt-injector', '设置命名空间必须是 prompt-injector（小写连字符标识符，dsh-settings NAMESPACE_PATTERN 校验）')
@@ -250,11 +252,14 @@ function makeCtx() {
   assert.equal(out.messages.length, 2, '应注入一条 notice 行')
   const notice = out.messages[1]
   assert.equal(notice.role, 'user', 'notice 必须是 user 角色消息')
-  assert.equal(notice.source.kind, 'plugin', 'source.kind 必须是 plugin')
-  assert.equal(notice.source.plugin, 'dsh-prompt-injector', 'source.plugin 必须是包名（UI 渲染插件名段）')
+  // 0.1.7 会话格式 V4：kind 必须是「生产者自有 kind」；kind:'plugin' 会在写盘
+  // 准入（assertV4RowAdmission）被拒 → 真机整轮失败。详见 test/v4-admission.test.mjs。
+  assert.equal(notice.source.kind, PROMPT_INJECTOR_SOURCE_KIND, 'source.kind 必须是生产者自有 kind（V4 契约）')
+  assert.equal(notice.source.kind, 'plugin:dsh-prompt-injector', '取 plugin:<包名> 命名空间形态（与平台迁移第三方插件的写法一致）')
+  assert.equal(notice.source.plugin, undefined, 'V4 不再使用 V3 的 plugin 字段')
   assert.equal(notice.source.form, 'notice', "source.form 必须是 'notice'（漏了就失去折叠注入行形态）")
   assert.equal(notice.source.summary, 'Pre-check', 'summary 只放标题，前缀由 UI 自动拼')
-  ok('apply 端到端：注入形态 = user / kind:plugin / form:notice / summary=标题')
+  ok('apply 端到端：注入形态 = user / kind:plugin:<包名> / form:notice / summary=标题')
 }
 
 // 4d. 注入链路健壮性：下游抛错不重放（next 只调一次）、决策缺 messages 直接回退

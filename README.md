@@ -17,9 +17,10 @@ memory plugins, made reusable for any rule you want the model to actually
 follow.
 
 ```text
-[context injection | dsh-prompt-injector] 图谱·Wiki 提醒  ← one notice line per enabled prompt,
-[context injection | dsh-prompt-injector] 回复结构 1-2-3   ← every round, right before the model
-[context injection | dsh-prompt-injector] 安全红线清单     ← plans its answer
+[context injection | plugin:dsh-prompt-injector] 图谱·Wiki 提醒  ← one notice line per enabled prompt,
+[context injection | plugin:dsh-prompt-injector] 回复结构 1-2-3   ← every round, right before the model
+[context injection | plugin:dsh-prompt-injector] 安全红线清单     ← plans its answer; the source
+                                                                    segment is the message's source.kind
 ```
 
 > [!IMPORTANT]
@@ -75,9 +76,17 @@ redlines, reply style…), add a prompt in the settings page.
 
 - **Injection point**: `agent/pre-step` → the plugin appends to
   `decision.messages` (same hook chain as dsh-mem0-plugins). One message per
-  enabled prompt, `role: user`, `source: { kind: 'plugin', form: 'notice',
-  summary: '<title>' }` — the UI renders it as a collapsed
+  enabled prompt, `role: user`, `source: { kind: 'plugin:dsh-prompt-injector',
+  form: 'notice', summary: '<title>' }` — the UI renders it as a collapsed
   notice line whose summary is visible without expanding.
+- **Message source (V4 contract)**: `kind` must be the *producer's own* kind.
+  V4 native admission refuses `kind: 'plugin'` (the retired V3 wrapper that
+  carried a separate `plugin` field) with
+  `format v4 message requires a producer-owned source kind`, and that check
+  runs on the write path — an injected message with the old shape fails the
+  whole turn. We use the `plugin:<package name>` namespace, which is exactly
+  the form the platform's own V3→V4 migration assigns to third-party plugin
+  sources.
 - **Hooking**: listens to `agent/created` for new agents and backfills
   pre-existing agents at apply time (a `WeakSet` guards against double
   registration).

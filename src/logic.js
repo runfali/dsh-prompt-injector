@@ -87,9 +87,29 @@ function genId() {
     : 'pi-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
 }
 
+/** 本插件在会话日志 source.kind 上的生产者身份（V4 契约）。
+ *
+ * 0.1.7 会话格式升级到 V4 后，`kind` 必须是「生产者自有的 kind」：
+ * dsh-session-format-v3-to-v4 的 source admission（lib/index.js:126，
+ * 打包副本见 dsh-session-persistence-jsonl worker.cjs:10721）直接
+ * `throw new SessionFormatError("format v4 message requires a producer-owned
+ * source kind")` 拒绝 kind === "plugin"，而这条校验在写盘路径
+ * （encodeEvent → assertV4RowAdmission）上就会触发 → 整轮失败。
+ * kind:"plugin" + plugin:"<名字>" 是 V3 的旧包装，已废弃。
+ *
+ * 用 "plugin:" 前缀：这正是平台把第三方插件 source 迁移到 V4 时给出的
+ * 命名空间形式（v3-to-v4 README「其他任何插件名 → plugin: 后接完整原名」），
+ * 与未知扩展事件名同一套命名空间，既表明来源是插件、又不会撞上未来的官方 kind。
+ * 与官方插件（time-context / plan-mode / tool-jobs… 各自写自己的名字）语义一致。
+ *
+ * UI 侧 contextProducer() 对未知 kind 直接 label = kind，不读 source.plugin
+ * （dsh-client-ui-chat/lib/client.js:7156），所以 kind 同时决定折叠行里
+ * 显示的生产者名——这里就是「插件名」段的来源。 */
+export const PROMPT_INJECTOR_SOURCE_KIND = 'plugin:dsh-prompt-injector'
+
 /** 单条提示词 → notice 消息。
  * summary 只放标题（不带「上下文注入」前缀）：UI 渲染 ContextInjectionRow 时
- * 自动拼「上下文注入 | <插件名> | <summary>」——手动加前缀会重复
+ * 自动拼「上下文注入 | <生产者 kind> | <summary>」——手动加前缀会重复
  * （2026-08-27 发哥实测反馈）。 */
 export function makePromptMessage(prompt) {
   return {
@@ -97,8 +117,7 @@ export function makePromptMessage(prompt) {
     role: 'user',
     content: [{ type: 'text', text: prompt.text }],
     source: {
-      kind: 'plugin',
-      plugin: 'dsh-prompt-injector',
+      kind: PROMPT_INJECTOR_SOURCE_KIND,
       form: 'notice',
       summary: prompt.title || '未命名'
     }

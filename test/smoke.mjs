@@ -1,12 +1,13 @@
 /**
  * dsh-prompt-injector host logic tests (node --test)
  * 覆盖：默认提示词要素、normPrompts 归一化兜底、makePromptMessage 形态
- * （form:'notice' + summary 纯标题，UI 自动加前缀）、shouldInject 决策。
+ * （V4 生产者 kind + form:'notice' + summary 纯标题，UI 自动加前缀）、
+ * shouldInject 决策。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { DEFAULT_PROMPTS, makePromptMessage, shouldInject, isTrivialPrompt, normPrompts, selectPrompts } from '../src/logic.js'
+import { DEFAULT_PROMPTS, PROMPT_INJECTOR_SOURCE_KIND, makePromptMessage, shouldInject, isTrivialPrompt, normPrompts, selectPrompts } from '../src/logic.js'
 
 test('默认提示词：空列表（2026-08-29 开源决策——只留机制，不预设内容）', () => {
   assert.deepEqual(DEFAULT_PROMPTS, [])
@@ -125,8 +126,10 @@ test('normPrompts：重复 id 去重（2026-09-02 审计 P2——行 key 冲突 
 test('makePromptMessage：notice 形态 + summary 纯标题（UI 自动加「上下文注入」前缀，2026-08-27 反馈）', () => {
   const m = makePromptMessage({ id: 'a', title: '图谱·Wiki 提醒', text: '正文', enabled: true })
   assert.equal(m.role, 'user')
-  assert.equal(m.source.kind, 'plugin')
-  assert.equal(m.source.plugin, 'dsh-prompt-injector')
+  // V4 契约：kind 必须是生产者自有 kind，kind:'plugin' 会被写入路径直接拒绝
+  assert.equal(m.source.kind, PROMPT_INJECTOR_SOURCE_KIND)
+  assert.equal(m.source.kind, 'plugin:dsh-prompt-injector')
+  assert.equal(m.source.plugin, undefined, 'V4 不再使用 plugin 字段（旧 V3 包装已废弃）')
   assert.equal(m.source.form, 'notice')
   assert.equal(m.source.summary, '图谱·Wiki 提醒')
   assert.equal(m.content[0].text, '正文')

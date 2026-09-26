@@ -86,7 +86,7 @@
 | compaction/summary 事件类型 + 字段嵌 data 层 | 不变（真机实证，见第四节） | dsh-session/lib/index.js:92；本机隔离实例事件流 |
 | `session/disposed` 载荷 = `(session)` | 不变 | dsh-session/lib/index.js:1505-1510 |
 | client：settingsScope.bind({namespace}) / locale.register(ns,{zh,en}) / slots.inject("settings.plugin.item") / exports.inject 短服务名 | 不变 | dsh-client-ui-settings/lib/client.js:1169-1176、dsh-client-locale/lib/client.js:1256/1357-1414、dsh-client-ui-settings-plugins/lib/client.js:1785+ |
-| 折叠行三要素 form:'notice' + source.kind:'plugin' + summary | 不变（KNOWN_FORMS 含 notice；kind==='plugin' → role 'inject'、label = source.plugin；前缀取自翻译键 message.contextInjection） | dsh-client-ui-chat/lib/client.js:772-802、4180-4228、2655/2761 |
+| 折叠行三要素 form:'notice' + 生产者 kind + summary | ⚠️ **本轮判定「不变」是错的，见第七轮**。0.1.5-rc.1 当时仍是 V3 会话，`kind:'plugin'` 可用；0.1.7 升 V4 后该形态被写盘准入拒绝。现为 `kind:'plugin:dsh-prompt-injector'`（UI：KNOWN_FORMS 含 notice；未知 kind → role 'inject'、label = kind；前缀取自翻译键 message.contextInjection） | dsh-client-ui-chat/lib/client.js:7156（contextProducer）、831-875（contextBody） |
 | combo URL 下发形态（__DSH_BOOT__.entries + /plugins/??<id>/client.js&rev=） | 不变（真机 200 + 28 KB + 工厂在列） | 本机隔离实例 curl 实测 |
 
 **唯一与「压实路径」相关的结构性变化（不是本插件缺陷，但决定真机验证方式）**：0.1.5-rc.1 的 web profile 把宿主层 compaction-basic / command-compact / tool-result-pruner 三条 **disabled**，压实改为**挂在 agent preset 的 cordis:group isolate 内**（dsh-web-app/cordis.patch.yml:427-433 对照 dsh-agent-presets/presets/standard/agent.cordis.yml:127-156）。minimal preset 明确写着「Context compaction is absent」，其 commands/list 不含 compact。→ **验证 postCompaction 必须选带压实的 preset（standard/ptc/cordis）；否则不是插件不生效，而是宿主没挂压实。**
@@ -132,7 +132,7 @@
 |---|---|
 | DSH_HOME=… dsh plugin --profile headless add <仓库路径> | ✅ 一步装好（走 dsh.bundle.patch） |
 | 组合树挂载 | ✅ --dump-config 末层出现 `# == dsh-prompt-injector` → - id: prompt-injector / name: dsh-prompt-injector |
-| headless 真机注入 | ✅ dsh --profile headless '计算 3*7，只回复数字' → 21；会话日志 seq 10 = 插件 user 消息，source={kind:'plugin', plugin:'dsh-prompt-injector', form:'notice', summary:'Pre-check: Graph/Wiki'} |
+| headless 真机注入（0.1.5-rc.1 当时） | ✅ dsh --profile headless '计算 3*7，只回复数字' → 21；会话日志 seq 10 = 插件 user 消息，source={kind:'plugin', plugin:'dsh-prompt-injector', form:'notice', summary:'Pre-check: Graph/Wiki'} —— **该形状在 0.1.7 的 V4 下已无效，见第七轮** |
 | web 实例起服 | ✅ DSH_HOME=… dsh --profile web --port `<probe-port>` --no-open |
 | 设置命名空间注册 | ✅ settings/describe 含 prompt-injector，resolved 值即用户真实配置（两条：graph-wiki=everyTurn、压缩后=postCompaction） |
 | 前端下发 | ✅ __DSH_BOOT__.entries 含 {"id":"dsh-prompt-injector","url":"/plugins/??dsh-prompt-injector/client.js&rev=…-44"}；combo URL HTTP **200**、28 037 字节、含工厂 id 与 PromptInjectorCard / PInj_card |
@@ -162,3 +162,63 @@
 **已知可接受缺口（诚实记录）**：
 - 设置卡在隔离实例中未逐控件点击验证（本轮验证到「命名空间注册 + client bundle 下发 + 卡片工厂在列」；交互层回归仍由 client-smoke.mjs 的 14 项本地断言承担）。
 - 已部署实例本轮**未挂载本插件**（其 profile bundles 在本轮升级宿主时被裁剪，只剩 `node_modules` 悬空 symlink；`settings.yaml` 里的 `prompt-injector:` 段仍在，属孤儿配置、不生效）。适配验收全程在隔离实例完成，**未擅自改动已部署实例**；重新挂载仍是标准的 `dsh plugin add` + 重启。
+
+---
+
+# 第七轮（2026-09-25 —— dsh 0.1.7-rc.1 真机故障：V4 source kind）
+
+**故障现象（用户报告）**：在设置页加了提示词后开启会话，界面报
+「本轮运行失败 format v4 message requires a producer-owned source kind」，
+插件停用后恢复正常。
+
+**根因（P0，已修复）**：`makePromptMessage` 产出 `source.kind: 'plugin'` + `plugin: 'dsh-prompt-injector'`——这是 **V3 的旧包装**。0.1.7 把会话格式升到 **V4**，V4 原生准入要求 `kind` 是「生产者自有的 kind」，`kind === 'plugin'` 被直接拒绝：
+
+- 校验点：`dsh-session-format-v3-to-v4/lib/index.js:126`（`source()`），
+  打包副本见 `dsh-session-persistence-jsonl/lib/worker.cjs:10721`。
+- 触发路径：**写盘**。`encodeEvent → assertV4RowAdmission → assertV4SourceRowAdmission → source()`。
+  即每条注入消息在落盘前就被拒 → 异常冒泡 → 整轮失败。
+- 为什么「加了提示词才炸」：`src/index.js` 有 `if (!sel.prompts.length) return decision`。
+  默认提示词为空 ⇒ 不注入 ⇒ 不报错；一加提示词 ⇒ 每轮必带坏 source ⇒ 每轮必炸。
+- 为什么 V3→V4 迁移没能救它：迁移对 `kind:'plugin'` 的重写
+  （`plugin:<原名>`）只作用于**存量旧会话的还原路径**；新写入的 V4 行在碰盘前就被拒了。
+
+**修复**：`source.kind` 改为 `'plugin:dsh-prompt-injector'`（常量
+`PROMPT_INJECTOR_SOURCE_KIND`，单一事实源）。选 `plugin:` 前缀是因为这正是平台
+**自己**把第三方插件 source 迁移到 V4 时采用的命名空间形式
+（v3-to-v4 README：任意其他插件名 → `plugin:` + 完整原名），既表明「来源是插件」，
+又不会撞上未来的官方 kind；官方插件（time-context / plan-mode / tool-jobs…）则各自
+写自己的名字，语义一致。`plugin` 字段一并移除。
+
+**UI 影响（已核实，非猜测）**：`contextProducer()` 对未知 kind 走 `label: kind`，
+**不读 `source.plugin`**（chat 与 trajectory 各一份）。所以旧形态即便通过也只会把
+「插件名」段渲染成字面量 `plugin`；改后渲染为 `plugin:dsh-prompt-injector`。
+折叠行形态与「上下文注入」前缀不变（后者来自翻译键，与 kind 无关），
+`form:'notice'` + `summary` 保留。
+
+**证据链**：
+
+| 项 | 证据 |
+|---|---|
+| 报错串唯一来源 | 全会话格式包中仅 v3-to-v4 定义该串（正则全量 grep：2 处命中，一处是打包副本） |
+| 隔离复现 | 直接调 `assertV4RowAdmission`：旧形态 `REFUSED: format v4 message requires a producer-owned source kind`，新形态 / `plugin:` 前缀形态 / 官方 `plan-mode` / `user` 均 `ADMITTED` |
+| 官方同类写法 | `dsh-time-context` `kind: name`(+`form:'snapshot'`)；`dsh-plan-mode`/`dsh-tool-jobs`/`dsh-webhook`/`dsh-subagent-settled`/`dsh-tool-goal` 均 `kind:'<自己>'+form:'notice'` |
+| 存量数据未被污染 | 全量解 18 个会话文件 / **12 801 行**：`kind==='plugin'` **0 条**、本插件注入行 **0 条** ⇒ 失败发生在落盘前，无需清理、无会话损坏 |
+| 反向验证 | 把 `kind` 改回 `'plugin'` 跑新守护：2 项红，且断言消息正是生产环境的原文；恢复即全绿 |
+
+> 探针保真度（本轮教训）：会话 `.jsonl.zstd` 是**多帧** zstd，
+> `zstdDecompressSync` / 流式 `createZstdDecompress` **都只解首帧**
+> （18 个文件全只读到 1 行，会得出「没有脏数据」的错误结论）。正确做法是按
+> magic `28 b5 2f fd` 切帧后逐帧解码（同一文件读出 588 帧 / 1051 行）。
+
+**测试盲区（本轮 P1，已修复）**：事故前 `entry.test.mjs:253` 与
+`smoke.mjs:128` 都断言 `source.kind === 'plugin'`——把错误契约**反向固化**，
+测试全绿而真机必炸。修法：断言改为引用 `PROMPT_INJECTOR_SOURCE_KIND`；新增
+`test/v4-admission.test.mjs`，用 dsh **自己发布的** `assertV4RowAdmission` 校验
+`makePromptMessage` 的产出真能被接受，并附**反向对照**（旧形态必须被拒，
+否则说明守护是空转）。该包缺失时默认**失败**（静默跳过正是本次事故成因），
+仅在显式 `DSH_PI_ALLOW_MISSING_V4_CODEC=1` 时降级为跳过。
+
+**同轮顺带修正的文档错误**：`docs/DSH-0.1.7-ADAPTATION.md` 与第六轮对照表曾把
+`source.kind:'plugin'` 记为「不变」——那是按 0.1.5（V3）源码下的判断，0.1.7 升 V4
+后已失效。0.1.7 适配那轮改对了 settings 接线，**漏了 source 形态**，且真机注入证据
+是 V3 时代的（本轮已标注）。

@@ -46,7 +46,11 @@
 - `session/event` 载荷 `[session, event]`、`compaction/summary` 事件 `data`
   嵌套形状不变（dsh-session append / dsh-compaction-basic 源码级复核）。
 - `session/disposed`（载荷 `[session]`）不变。
-- 注入形态 `user / source.kind:'plugin' / form:'notice' / summary=标题` 不变。
+- 注入形态 `user / form:'notice' / summary=标题` 不变；**但 `source.kind` 必须改**——
+  当时此处记为「`kind:'plugin'` 不变」是**错的**（0.1.7 会话格式升 V4，V4 原生准入
+  拒绝 `kind:'plugin'`，且校验在写盘路径上 → 加提示词后每轮「本轮运行失败」）。
+  现为 `kind:'plugin:dsh-prompt-injector'`。完整根因、证据与回归守护见
+  [docs/AUDIT.md 第七轮](AUDIT.md#第七轮2026-09-25--dsh-017-rc1-真机故障v4-source-kind)。
 
 ## 改动清单
 
