@@ -66,7 +66,15 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 
 ## 环境要求
 
-- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。机器可读区间（`dsh.engines.dsh` 与 `peerDependencies` 的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-settings` 两项）为 `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8"`——**析取子句不可省**：npm semver 规定预发布版本只被「区间内含同 `[major,minor,patch]` 元组的预发布」的区间满足，`0.1.5-rc.*` 与 `0.1.7-rc.*` 各需自己的子句。**0.1.7 起 peer 区间被宿主强制校验**：安装期（插件管理器 preflight）与启动期（profile 兼容 preflight）均会消费，不匹配即拒绝安装/挂载。已在 dsh **0.1.7-rc.1** 实测（更早版本在 0.1.5-rc.1 / 0.1.2-alpha.4 实测）——一次性 Profile 安装/启动/卸载证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)，真机注入实录见 [docs/AUDIT.md](docs/AUDIT.md)。
+- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。机器可读区间（`dsh.engines.dsh` 与 `peerDependencies` 的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-settings` 两项）为 `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8 || >=0.2.0-alpha.0 <0.3.0"`——**析取子句不可省**：npm semver 规定预发布版本只被「区间内含同 `[major,minor,patch]` 元组的预发布」的区间满足（pnpm 安装期的严格模式），`0.1.5-rc.*`、`0.1.7-rc.*`、`0.2.0-rc.*` 各需自己的子句。**0.1.7 起 peer 区间被宿主强制校验**：安装期（插件管理器 preflight）与启动期（profile 兼容 preflight）均会消费，不匹配即拒绝安装/挂载。已在 dsh **0.2.0-rc.1** 实测（更早版本在 0.1.7-rc.1 / 0.1.5-rc.1 / 0.1.2-alpha.4 实测）——一次性 Profile 安装/启动/卸载证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)，真机注入实录见 [docs/AUDIT.md](docs/AUDIT.md)。
+
+  > **两条判定的差异（0.2.0 适配轮实测订正）**：宿主闸用的是
+  > `semver.satisfies(rt, range, { includePrerelease: true })`，此模式下**预发布可见性规则被整体绕过**，
+  > 于是「上界自身的预发布」也会被放行——`<0.3.0` 放行 `0.3.0-alpha.0`、`<0.1.8` 放行 `0.1.8-rc.1`。
+  > 严格模式（pnpm 安装期，默认选项）则会拒绝它们。所以上界拦的是**正式版**，不是预发布。
+  > 若需要连 `0.3.0-*` 预发布一起拒，上界须写成 `<0.3.0-0`。两个模式逐行实测见 `test/entry.test.mjs`。
+  > **另**：全树 grep 确认宿主**从不读 `dsh.engines.dsh`**，兼容闸只遍历
+  > `peerDependencies` 里 `@deepseek-ai/dsh*` 的条目——两者必须逐字一致，测试已守护。
 - 运行时依赖：**无**。仅声明四个 peer（`@deepseek-ai/dsh`、`@deepseek-ai/dsh-settings`、`@deepseek-ai/schemastery`、`react`），全部由 dsh 宿主自身提供。
 - 安全与失败边界：无网络访问、无子进程、无文件写；注入全路径 try/catch 包裹，插件故障不破坏对话轮次；注入文本永不执行。
 - 提示词正文里引用的命令（图谱服务、wiki 检索等）属于你自己的环境——它们只是文本，插件不执行任何东西。

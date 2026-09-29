@@ -16,7 +16,7 @@
  * - 设置卡文案与 host schema 默认值一致（设置页是用户判断行为的唯一界面）。
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -58,13 +58,13 @@ ok('宿主入口真实 import 成功（apply / 命名空间 / inject / Config �
 // 见第 3 节（stub 里以 undefined config 驱动，断言默认语义）与第 4 节（文案漂移）。
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(typeof pkg.version, 'string', 'package.json 缺 version')
-assert.equal(pkg.version, '0.1.7-rc.1', '版本号必须跟宿主发布号（家族惯例）')
+assert.equal(pkg.version, '0.2.0-rc.1', '版本号必须跟宿主发布号（家族惯例）')
 assert.equal(pkg.type, 'module', '必须是 ESM 包')
 assert.equal(pkg.exports['.'], './src/index.js', 'exports["."] 必须指向宿主入口')
 assert.equal(pkg.exports['./client'], './lib/client.js', 'exports["./client"] 必须指向 client bundle')
 assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml', 'dsh.bundle.patch 必须声明（装上≠挂载：无声明不进组合树）')
 assert.equal(pkg.dsh.client.platform, 'web', 'dsh.client.platform 必须是 web')
-ok('package.json 入口/导出/挂载声明齐备，版本号 0.1.7-rc.1')
+ok('package.json 入口/导出/挂载声明齐备，版本号 0.2.0-rc.1')
 
 // ---------------------------------------------------------------------------
 // 3. dsh.engines.dsh 区间守护（内置判定表，不引 semver 依赖，防测试随依赖漂移）
@@ -135,42 +135,122 @@ function satisfies(version, rng) {
   return false
 }
 
-const TABLE = [
-  ['0.1.2-alpha.3', true],
-  ['0.1.2-rc.1', true],
-  ['0.1.5-alpha.1', true],
-  ['0.1.5-alpha.2', true],
-  ['0.1.5-rc.1', true],
-  ['0.1.5', true],
-  ['0.1.6', true],
-  ['0.1.7-rc.1', true],
-  ['0.1.7', true],
-  ['0.1.3-alpha.1', false],
-  ['0.1.8', false],
-  ['0.1.8-rc.1', false],
-  ['0.2.0', false],
-  ['0.0.1', false]
-]
-for (const [version, expected] of TABLE) {
-  assert.equal(satisfies(version, range), expected, 'engines 区间对 ' + version + ' 的判定应为 ' + expected + '（区间=' + range + '）')
+/**
+ * 宿主闸模式判定（0.2.0 适配轮新增，2026-09-29）。
+ *
+ * npm semver 有**两种模式**，本仓此前只建模了其中一种：
+ *   - 严格模式（默认）      = 纯比较器 AND 预发布可见性规则  —— `pnpm install` 用它
+ *   - 宿主闸模式（includePrerelease: true）= 纯比较器，预发布可见性规则被整体绕过
+ *     —— dsh-app-boot 的 evaluatePluginCompatibility 用它（`lib/index.js:300`），
+ *        这才是**决定插件能否加载**的判定。
+ *
+ * 两者在「上界自身的预发布」上分叉：`<0.1.8` 放行 `0.1.8-rc.1`、`<0.3.0` 放行 `0.3.0-alpha.0`。
+ * 即 `satisfies()` 去掉 preReleaseVisible 这一步；已用宿主自带 semver 7.8.5 对 280 个版本
+ * 逐版本验证与 `semver.satisfies(v, range, { includePrerelease: true })` 零分歧。
+ */
+function satisfiesHost(version, rng) {
+  const v = parseVersion(version)
+  for (const group of String(rng).split('||')) {
+    const parts = group.trim().split(/\s+/).filter(Boolean)
+    let groupOk = true
+    for (const part of parts) {
+      const m = /^(>=|<=|>|<|=)?\s*(.+)$/.exec(part)
+      const op = m[1] || '='
+      const c = compare(v, parseVersion(m[2]))
+      if (op === '>=' && c < 0) groupOk = false
+      else if (op === '<=' && c > 0) groupOk = false
+      else if (op === '>' && c <= 0) groupOk = false
+      else if (op === '<' && c >= 0) groupOk = false
+      else if (op === '=' && c !== 0) groupOk = false
+    }
+    if (groupOk) return true
+  }
+  return false
 }
-ok('engines 判定表 ' + TABLE.length + ' 行逐行通过（含 0.1.5-rc.1 / 0.1.7-rc.1 覆盖，0.1.8 排除）')
+
+// 三列：版本、严格模式（pnpm 安装期）、宿主闸模式（includePrerelease，决定能否加载）。
+// 两列都逐行实测（宿主自带 semver 7.8.5）后写死，见下方交叉验证。
+const TABLE = [
+  // [version, strictMode(pnpm), hostGateMode(app-boot)]
+  ['0.1.2-alpha.3', true, true],
+  ['0.1.2-rc.1', true, true],
+  ['0.1.5-alpha.1', true, true],
+  ['0.1.5-alpha.2', true, true],
+  ['0.1.5-rc.1', true, true],
+  ['0.1.5', true, true],
+  ['0.1.6', true, true],
+  ['0.1.7-rc.1', true, true],
+  ['0.1.7-rc.2', true, true],
+  ['0.1.7', true, true],
+  // 0.2.0 适配轮（2026-09-29）：宿主实测 0.2.0-rc.1，新区间必须放行 0.2.x 全系。
+  // 上一轮这里断言 0.2.0 === false（当时未验证，故意拦住），本轮已验证 → 有意翻转。
+  ['0.2.0-alpha.0', true, true],
+  ['0.2.0-rc.1', true, true],
+  ['0.2.0', true, true],
+  ['0.2.3', true, true],
+  // 分叉行：上界自身的预发布。宿主闸放行（预发布可见性被绕过），严格模式拒绝。
+  // 这不是缺陷，是 npm semver 的既定语义；写下来是为了让两套判定的差异可见。
+  ['0.1.3-alpha.1', false, true],
+  ['0.1.8-rc.1', false, true],
+  ['0.3.0-alpha.0', false, true],
+  // 真正被排除的：上界正式版本身与其后的大版本
+  ['0.1.8', false, false],
+  ['0.3.0', false, false],
+  ['0.0.1', false, false]
+]
+for (const [version, expectStrict, expectHost] of TABLE) {
+  assert.equal(satisfies(version, range), expectStrict, '严格模式（pnpm）对 ' + version + ' 的判定应为 ' + expectStrict + '（区间=' + range + '）')
+  assert.equal(satisfiesHost(version, range), expectHost, '宿主闸模式对 ' + version + ' 的判定应为 ' + expectHost + '（区间=' + range + '）')
+}
+ok('判定表 ' + TABLE.length + ' 行逐行通过（严格模式 + 宿主闸模式双列；0.1.5/0.1.7/0.2.0 覆盖，0.1.8 与 0.3.0 排除）')
+
+// 上界语义显式化：`<0.3.0` 在宿主闸下**会**放行 `0.3.0-*` 预发布（见上表），
+// 只拒绝 `0.3.0` 正式版。若将来要连 0.3.0 预发布一起拒，上界需写成 `<0.3.0-0`。
+// 这里把这个已知边界钉住，避免有人以为「<0.3.0 等于完全不开 0.3」。
+assert.equal(satisfiesHost('0.3.0-alpha.0', range), true, '已知边界：<0.3.0 在宿主闸下不拦 0.3.0 预发布')
+assert.equal(satisfiesHost('0.3.0', range), false, '0.3.0 正式版必须被拒')
+ok('上界已知边界钉住：<0.3.0 拦正式版，但宿主闸下放行 0.3.0-* 预发布（如需全拦改 <0.3.0-0）')
 
 // 反证：旧单区间不覆盖 0.1.5-rc.1 —— 这正是本次必须加析取的原因
 assert.equal(satisfies('0.1.5-rc.1', '>=0.1.2-alpha.3 <0.2.0'), false, '旧单区间本不应覆盖 0.1.5-rc.1，判定器写反了')
 ok('反证：旧单区间不覆盖 0.1.5-rc.1（故必须加析取，非冗余声明）')
 
-// 交叉验证：同一判定表与宿主真实 semver 逐行一致（宿主不可解析则显式跳过，不假绿）
+// 反证：0.2.0 适配轮——旧三段区间不覆盖 0.2.0-rc.1，故新段 `|| >=0.2.0-alpha.0 <0.3.0` 非冗余。
+// 真机证据：未加新段时宿主启动闸打印 `skipping profile bundle "dsh-prompt-injector"`，
+// 整个 bundle 不加载（本插件在 web 与 desktop 两个 profile 同时失效）。
+const OLD_THREE_CLAUSE = '>=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8'
+assert.equal(satisfies('0.2.0-rc.1', OLD_THREE_CLAUSE), false, '旧三段区间本不应覆盖 0.2.0-rc.1，判定器写反了')
+assert.equal(satisfies('0.2.0-rc.1', range), true, '新区间必须覆盖 0.2.0-rc.1')
+ok('反证：旧三段区间不覆盖 0.2.0-rc.1（故新段非冗余声明）')
+
+// 交叉验证：内置判定器与宿主真实 semver 逐行一致（宿主不可解析则显式跳过，不假绿）
+// 两列都要对：严格模式对 `semver.satisfies(v, range)`，宿主闸模式对
+// `semver.satisfies(v, range, { includePrerelease: true })`——后者才是决定加载的那个。
+//
+// 解析路径按实测顺序（本仓 pnpm 布局）：semver 是 @deepseek-ai/dsh 的依赖，
+// 落点是 `node_modules/.pnpm/semver@<ver>/node_modules/semver`（顶层无裸 semver），
+// 因此除了裸名还扫 .pnpm 目录——版本号不写死，避免升级后静默跳过交叉验证。
 const req = createRequire(import.meta.url)
-let semver = null
-for (const candidate of ['/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/semver', 'semver']) {
-  try { semver = req(candidate); break } catch { /* next */ }
-}
-if (semver && typeof semver.satisfies === 'function') {
-  for (const [version, expected] of TABLE) {
-    assert.equal(semver.satisfies(version, range), expected, '宿主 semver 对 ' + version + ' 的判定与内置判定表不一致')
+function loadHostSemver() {
+  for (const candidate of ['semver', '@deepseek-ai/dsh/node_modules/semver']) {
+    try { return req(candidate) } catch { /* next */ }
   }
-  ok('内置判定器与宿主真实 semver.satisfies 逐行一致（' + TABLE.length + ' 行）')
+  try {
+    const pnpmDir = join(root, 'node_modules', '.pnpm')
+    for (const entry of readdirSync(pnpmDir)) {
+      if (!entry.startsWith('semver@')) continue
+      try { return req(join(pnpmDir, entry, 'node_modules', 'semver')) } catch { /* next */ }
+    }
+  } catch { /* .pnpm absent */ }
+  return null
+}
+const semver = loadHostSemver()
+if (semver && typeof semver.satisfies === 'function') {
+  for (const [version, expectStrict, expectHost] of TABLE) {
+    assert.equal(semver.satisfies(version, range), expectStrict, '宿主 semver（严格模式）对 ' + version + ' 的判定与内置判定表不一致')
+    assert.equal(semver.satisfies(version, range, { includePrerelease: true }), expectHost, '宿主 semver（includePrerelease）对 ' + version + ' 的判定与内置判定表不一致')
+  }
+  ok('内置判定器与宿主真实 semver.satisfies 逐行一致（' + TABLE.length + ' 行 × 两种模式）')
 } else {
   ok('宿主 semver 不可解析，跳过交叉验证（不假绿）')
 }
@@ -180,11 +260,17 @@ const peerSettings = pkg.peerDependencies['@deepseek-ai/dsh-settings']
 assert.equal(typeof peerSettings, 'string', 'peerDependencies 缺 @deepseek-ai/dsh-settings')
 assert.equal(satisfies('0.1.5-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.1.5-rc.1：' + peerSettings)
 assert.equal(satisfies('0.1.7-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.1.7-rc.1：' + peerSettings)
-// 0.1.7 起 @deepseek-ai/dsh peer 是安装/启动兼容闸的判定对象，必须声明且覆盖 0.1.7-rc.1
+assert.equal(satisfies('0.2.0-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.2.0-rc.1：' + peerSettings)
+// 0.1.7 起 @deepseek-ai/dsh peer 是安装/启动兼容闸的判定对象，必须声明且覆盖目标版本。
+// 0.2.0 适配轮实测订正：闸（dsh-app-boot 的 evaluatePluginCompatibility）**只**遍历
+// peerDependencies 里 @deepseek-ai/dsh* 的条目，**从不读 dsh.engines.dsh**——全树 grep
+// 零消费者。所以 peer 才是决定插件生死的声明；engines 只影响 pnpm 安装期。两者必须逐字一致。
 const peerDsh = pkg.peerDependencies['@deepseek-ai/dsh']
-assert.equal(typeof peerDsh, 'string', 'peerDependencies 缺 @deepseek-ai/dsh（0.1.7 兼容闸必读）')
+assert.equal(typeof peerDsh, 'string', 'peerDependencies 缺 @deepseek-ai/dsh（兼容闸必读）')
 assert.equal(satisfies('0.1.7-rc.1', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.1.7-rc.1：' + peerDsh)
-ok('peerDependencies 区间覆盖 0.1.5-rc.1 与 0.1.7-rc.1（dsh + dsh-settings 双 peer）')
+assert.equal(satisfies('0.2.0-rc.1', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.2.0-rc.1：' + peerDsh)
+assert.equal(peerDsh, range, 'peerDependencies["@deepseek-ai/dsh"] 必须与 dsh.engines.dsh 逐字一致（闸只认前者）')
+ok('peerDependencies 区间覆盖 0.1.5-rc.1 / 0.1.7-rc.1 / 0.2.0-rc.1（dsh + dsh-settings 双 peer，且 dsh peer 与 engines 一致）')
 
 // ---------------------------------------------------------------------------
 // 4. apply 端到端：真入口 + 最小桩，断言默认语义（未配置 = 不注入任何提示词）
