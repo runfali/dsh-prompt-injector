@@ -110,16 +110,17 @@ redlines, reply style…), add a prompt in the settings page.
   `^22.19.0 || >=24.0.0`. The machine-readable range (both `dsh.engines.dsh`
   and the `peerDependencies` entries for `@deepseek-ai/dsh` /
   `@deepseek-ai/dsh-settings`) is
-  `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8 || >=0.2.0-alpha.0 <0.3.0"` —
+  `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8 || >=0.2.0-alpha.0 <0.3.0 || >=0.2.1-alpha.0 <0.3.0"` —
   the disjunctions exist because npm semver only lets a **prerelease** be
   satisfied by a range that carries a prerelease with the same
-  `[major,minor,patch]` tuple, so `0.1.5-rc.*`, `0.1.7-rc.*` and `0.2.0-rc.*`
-  each need their own clause. Since dsh 0.1.7 the `peerDependencies` range is
-  **enforced** at install time (plugin-manager preflight) and at startup
-  (profile compatibility preflight). Verified on dsh **0.2.0-rc.1** (and earlier
-  on 0.1.7-rc.1 / 0.1.5-rc.1 / 0.1.2-alpha.4) — a disposable-profile
-  install/start/uninstall transcript is in [docs/EVIDENCE.md](docs/EVIDENCE.md),
-  and the real-machine injection run is recorded in [docs/AUDIT.md](docs/AUDIT.md).
+  `[major,minor,patch]` tuple, so `0.1.5-rc.*`, `0.1.7-rc.*`, `0.2.0-rc.*` and
+  `0.2.1-rc.*` each need their own clause. Since dsh 0.1.7 the
+  `peerDependencies` range is **enforced** at install time (plugin-manager
+  preflight) and at startup (profile compatibility preflight). Verified on dsh
+  **0.2.1-rc.2** (and earlier on 0.2.0-rc.1 / 0.1.7-rc.1 / 0.1.5-rc.1 /
+  0.1.2-alpha.4) — a disposable-profile install/start/uninstall transcript is in
+  [docs/EVIDENCE.md](docs/EVIDENCE.md), and the real-machine injection run is
+  recorded in [docs/AUDIT.md](docs/AUDIT.md).
 
   > **Two semver modes.** The host gate evaluates with
   > `{ includePrerelease: true }`, which **bypasses** npm's prerelease-visibility
@@ -127,6 +128,13 @@ redlines, reply style…), add a prompt in the settings page.
   > `0.1.8-rc.1` and `<0.3.0` admits `0.3.0-alpha.0`. Strict semver (pnpm install)
   > rejects those. The upper bound therefore blocks the **release** version, not
   > its prereleases; use `<0.3.0-0` if you need to exclude `0.3.0-*` too.
+
+  > **The 0.2.1 clause fixes install, not loading.** On dsh 0.2.1 the host gate
+  > *already* admitted this plugin under the previous range (`>=0.2.0-alpha.0
+  > <0.3.0` passes `0.2.1-rc.2` because the upper bound's own prerelease is
+  > exempted). What failed was **strict mode** at `pnpm install`. Do not read the
+  > 0.2.1 clause as "the plugin would not load" — that was the 0.2.0 situation,
+  > where the range had no `0.2.x` clause at all.
   > Also note the gate reads **only `peerDependencies`** — `dsh.engines.dsh` has
   > zero consumers in the 0.2.0 tree, so the two must stay byte-identical
   > (guarded by `test/entry.test.mjs`).

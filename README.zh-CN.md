@@ -66,7 +66,13 @@ web profile 的**通用每轮上下文注入插件**。在设置页维护一份�
 
 ## 环境要求
 
-- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。机器可读区间（`dsh.engines.dsh` 与 `peerDependencies` 的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-settings` 两项）为 `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8 || >=0.2.0-alpha.0 <0.3.0"`——**析取子句不可省**：npm semver 规定预发布版本只被「区间内含同 `[major,minor,patch]` 元组的预发布」的区间满足（pnpm 安装期的严格模式），`0.1.5-rc.*`、`0.1.7-rc.*`、`0.2.0-rc.*` 各需自己的子句。**0.1.7 起 peer 区间被宿主强制校验**：安装期（插件管理器 preflight）与启动期（profile 兼容 preflight）均会消费，不匹配即拒绝安装/挂载。已在 dsh **0.2.0-rc.1** 实测（更早版本在 0.1.7-rc.1 / 0.1.5-rc.1 / 0.1.2-alpha.4 实测）——一次性 Profile 安装/启动/卸载证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)，真机注入实录见 [docs/AUDIT.md](docs/AUDIT.md)。
+- DeepSeek Harness (dsh) **≥ 0.1.2-alpha.3**（web profile），Node.js `^22.19.0 || >=24.0.0`。机器可读区间（`dsh.engines.dsh` 与 `peerDependencies` 的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-settings` 两项）为 `">=0.1.2-alpha.3 <0.1.8 || >=0.1.5-alpha.1 <0.1.6 || >=0.1.7-alpha.0 <0.1.8 || >=0.2.0-alpha.0 <0.3.0"`——**析取子句不可省**：npm semver 规定预发布版本只被「区间内含同 `[major,minor,patch]` 元组的预发布」的区间满足（pnpm 安装期的严格模式），`0.1.5-rc.*`、`0.1.7-rc.*`、`0.2.0-rc.*`、`0.2.1-rc.*` 各需自己的子句。**0.1.7 起 peer 区间被宿主强制校验**：安装期（插件管理器 preflight）与启动期（profile 兼容 preflight）均会消费，不匹配即拒绝安装/挂载。已在 dsh **0.2.1-rc.2** 实测（更早版本在 0.2.0-rc.1 / 0.1.7-rc.1 / 0.1.5-rc.1 / 0.1.2-alpha.4 实测）——一次性 Profile 安装/启动/卸载证据见 [docs/EVIDENCE.md](docs/EVIDENCE.md)，真机注入实录见 [docs/AUDIT.md](docs/AUDIT.md)。
+
+  > **0.2.1 子句修的是「装不上」，不是「加载被拒」（本轮实测订正，别照抄 0.2.0 那轮的说法）**：
+  > 在 dsh 0.2.1 上**旧区间本来就能通过宿主闸**——`>=0.2.0-alpha.0 <0.3.0` 的上界自身预发布
+  > 被 `includePrerelease` 绕过，纯比较器下 `0.2.1-rc.2 < 0.3.0` 成立，真闸函数返回 `undefined`（放行）。
+  > 真正被拒的是 **pnpm 安装期的严格模式**。0.2.0 那轮才是「加载被拒」（旧区间根本没有 `0.2.x` 段）。
+  > 两轮成因不同，别混为一谈。
 
   > **两条判定的差异（0.2.0 适配轮实测订正）**：宿主闸用的是
   > `semver.satisfies(rt, range, { includePrerelease: true })`，此模式下**预发布可见性规则被整体绕过**，
