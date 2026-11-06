@@ -19,6 +19,12 @@
  * ① 0.2.1 的闸改为「顶层 engines.dsh 存在时它单独判定，peers 被忽略」（0.2.0 是纯 peers）；
  * ② 0.2.1-rc.2 在旧区间下**宿主闸本就放行**，补段修的是 pnpm 安装期严格模式，
  *    与 0.2.0 那轮「加载被拒」的成因不同 —— 别把两轮的因果混为一谈。
+ *
+ * 0.2.2 适配轮（2026-11-06）：宿主实测 0.2.2-rc.1（resources/app.asar/dsh/package.json）。
+ * 判定闸语义不变（dsh-app-boot/lib/index.js:1097-1116：顶层 engines.dsh 优先，
+ * 否则逐条 peer，`includePrerelease: true`），本仓仍由 peers 决定。
+ * 0.2.2-rc.1 在旧五段区间下宿主闸同样放行，故补段修的还是 pnpm 严格模式；
+ * 本轮另把「宿主真闸函数」接进测试（见第 3b 节），不再只靠复刻判定器。
  */
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -63,13 +69,13 @@ ok('宿主入口真实 import 成功（apply / 命名空间 / inject / Config �
 // 见第 3 节（stub 里以 undefined config 驱动，断言默认语义）与第 4 节（文案漂移）。
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(typeof pkg.version, 'string', 'package.json 缺 version')
-assert.equal(pkg.version, '0.2.1-rc.2', '版本号必须跟宿主发布号（家族惯例）')
+assert.equal(pkg.version, '0.2.2-rc.1', '版本号必须跟宿主发布号（家族惯例）')
 assert.equal(pkg.type, 'module', '必须是 ESM 包')
 assert.equal(pkg.exports['.'], './src/index.js', 'exports["."] 必须指向宿主入口')
 assert.equal(pkg.exports['./client'], './lib/client.js', 'exports["./client"] 必须指向 client bundle')
 assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml', 'dsh.bundle.patch 必须声明（装上≠挂载：无声明不进组合树）')
 assert.equal(pkg.dsh.client.platform, 'web', 'dsh.client.platform 必须是 web')
-ok('package.json 入口/导出/挂载声明齐备，版本号 0.2.1-rc.2')
+ok('package.json 入口/导出/挂载声明齐备，版本号 0.2.2-rc.1')
 
 // ---------------------------------------------------------------------------
 // 3. dsh.engines.dsh 区间守护（内置判定表，不引 semver 依赖，防测试随依赖漂移）
@@ -202,11 +208,16 @@ const TABLE = [
   ['0.2.1-rc.2', true, true],
   ['0.2.1', true, true],
   ['0.2.2', true, true],
+  // 0.2.2 适配轮（2026-11-06）：宿主实测 0.2.2-rc.1。
+  // 这两行在**旧五段区间**下是分叉行（strict=false / host=true，见下方反证），
+  // 补 0.2.2 段后转为两列一致 —— 与 0.2.1 那轮同因：宿主闸本就放行，
+  // 被拒的只是 pnpm 安装期严格模式。
+  ['0.2.2-alpha.0', true, true],
+  ['0.2.2-rc.1', true, true],
   // 分叉行：上界自身的预发布。宿主闸放行（预发布可见性被绕过），严格模式拒绝。
   // 这不是缺陷，是 npm semver 的既定语义；写下来是为了让两套判定的差异可见。
   ['0.1.3-alpha.1', false, true],
   ['0.1.8-rc.1', false, true],
-  ['0.2.2-rc.1', false, true],
   ['0.3.0-alpha.0', false, true],
   // 真正被排除的：上界正式版本身与其后的大版本
   ['0.1.8', false, false],
@@ -217,7 +228,7 @@ for (const [version, expectStrict, expectHost] of TABLE) {
   assert.equal(satisfies(version, range), expectStrict, '严格模式（pnpm）对 ' + version + ' 的判定应为 ' + expectStrict + '（区间=' + range + '）')
   assert.equal(satisfiesHost(version, range), expectHost, '宿主闸模式对 ' + version + ' 的判定应为 ' + expectHost + '（区间=' + range + '）')
 }
-ok('判定表 ' + TABLE.length + ' 行逐行通过（严格模式 + 宿主闸模式双列；0.1.5/0.1.7/0.2.0/0.2.1 覆盖，0.1.8 与 0.3.0 排除）')
+ok('判定表 ' + TABLE.length + ' 行逐行通过（严格模式 + 宿主闸模式双列；0.1.5/0.1.7/0.2.0/0.2.1/0.2.2 覆盖，0.1.8 与 0.3.0 排除）')
 
 // 上界语义显式化：`<0.3.0` 在宿主闸下**会**放行 `0.3.0-*` 预发布（见上表），
 // 只拒绝 `0.3.0` 正式版。若将来要连 0.3.0 预发布一起拒，上界需写成 `<0.3.0-0`。
@@ -253,6 +264,17 @@ assert.equal(satisfiesHost('0.2.1-rc.2', OLD_FOUR_CLAUSE), true, '旧四段区�
 assert.equal(satisfies('0.2.1-rc.2', range), true, '新区间必须在严格模式下也覆盖 0.2.1-rc.2（pnpm 安装期）')
 assert.equal(satisfiesHost('0.2.1-rc.2', range), true, '新区间必须覆盖 0.2.1-rc.2（宿主闸）')
 ok('反证：旧四段区间 strict 拒 0.2.1-rc.2 而 host 放行（故新段修的是 pnpm 安装期，非加载闸）')
+
+// 反证：0.2.2 适配轮（2026-11-06）—— 与 0.2.1 同形态：旧五段区间在严格模式下拒 0.2.2-rc.1，
+// 宿主闸却放行（`>=0.2.1-alpha.0 <0.3.0` 的上界预发布被 includePrerelease 绕过）。
+// 所以本轮补段修的仍是 pnpm 安装期，不是「加载被拒」。
+// 真机旁证：0.2.2-rc.1 宿主里本插件（link 安装、旧声明）照常注入 —— 加载闸从未拦它。
+const OLD_FIVE_CLAUSE = OLD_FOUR_CLAUSE + ' || >=0.2.1-alpha.0 <0.3.0'
+assert.equal(satisfies('0.2.2-rc.1', OLD_FIVE_CLAUSE), false, '旧五段区间在严格模式下本不应覆盖 0.2.2-rc.1，判定器写反了')
+assert.equal(satisfiesHost('0.2.2-rc.1', OLD_FIVE_CLAUSE), true, '旧五段区间在宿主闸下本就放行 0.2.2-rc.1（上界预发布被绕过）——故本轮不是「加载被拒」')
+assert.equal(satisfies('0.2.2-rc.1', range), true, '新区间必须在严格模式下也覆盖 0.2.2-rc.1（pnpm 安装期）')
+assert.equal(satisfiesHost('0.2.2-rc.1', range), true, '新区间必须覆盖 0.2.2-rc.1（宿主闸）')
+ok('反证：旧五段区间 strict 拒 0.2.2-rc.1 而 host 放行（故新段修的是 pnpm 安装期，非加载闸）')
 
 // 交叉验证：内置判定器与宿主真实 semver 逐行一致（宿主不可解析则显式跳过，不假绿）
 // 两列都要对：严格模式对 `semver.satisfies(v, range)`，宿主闸模式对
@@ -293,10 +315,11 @@ assert.equal(satisfies('0.1.5-rc.1', peerSettings), true, 'peerDependencies 的 
 assert.equal(satisfies('0.1.7-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.1.7-rc.1：' + peerSettings)
 assert.equal(satisfies('0.2.0-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.2.0-rc.1：' + peerSettings)
 assert.equal(satisfies('0.2.1-rc.2', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.2.1-rc.2（pnpm 安装期会拒）：' + peerSettings)
+assert.equal(satisfies('0.2.2-rc.1', peerSettings), true, 'peerDependencies 的 dsh-settings 区间不覆盖 0.2.2-rc.1（pnpm 安装期会拒）：' + peerSettings)
 // 0.1.7 起 @deepseek-ai/dsh peer 是安装/启动兼容闸的判定对象，必须声明且覆盖目标版本。
 // 0.2.0 适配轮的结论（「闸只遍历 peer，从不读 engines」）在 **0.2.1 已被推翻**，
 // 本轮据实订正 —— 这正是「守护注释会说谎」的实例：
-//   0.2.1 的 unmetRequirements（dsh-app-boot/lib/index.js:279）改为
+//   0.2.1 的 unmetRequirements（0.2.2-rc.1 实装：dsh-app-boot/lib/index.js:1097-1116）改为
 //     if (Object.hasOwn(fields.engines, 'dsh')) return 用 engines.dsh 判定（peers 被忽略）
 //   只有**顶层** `engines.dsh` 存在时才走这条；本仓的 `dsh.engines.dsh` 是嵌套字段，
 //   不属于 fields.engines，所以本仓实际仍由 peers 决定（已用宿主真闸函数实测确认）。
@@ -307,11 +330,54 @@ assert.equal(typeof peerDsh, 'string', 'peerDependencies 缺 @deepseek-ai/dsh（
 assert.equal(satisfies('0.1.7-rc.1', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.1.7-rc.1：' + peerDsh)
 assert.equal(satisfies('0.2.0-rc.1', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.2.0-rc.1：' + peerDsh)
 assert.equal(satisfies('0.2.1-rc.2', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.2.1-rc.2（pnpm 安装期会拒）：' + peerDsh)
+assert.equal(satisfies('0.2.2-rc.1', peerDsh), true, 'peerDependencies 的 dsh 区间不覆盖 0.2.2-rc.1（pnpm 安装期会拒）：' + peerDsh)
 assert.equal(peerDsh, range, 'peerDependencies["@deepseek-ai/dsh"] 必须与 dsh.engines.dsh 逐字一致')
 // 顶层 engines.dsh 若被引入，0.2.1 闸会改由它单独判定（peers 被忽略）——
 // 本仓刻意不声明它，把判定权留在 peers 上。这条断言把这个前提钉住。
 assert.equal(Object.hasOwn(pkg.engines || {}, 'dsh'), false, '顶层 engines.dsh 一旦出现，0.2.1 闸会忽略全部 peers 改由它单独判定——改前必须先想清楚')
-ok('peerDependencies 区间覆盖 0.1.5-rc.1 / 0.1.7-rc.1 / 0.2.0-rc.1 / 0.2.1-rc.2（dsh + dsh-settings 双 peer，且 dsh peer 与 engines 一致）')
+ok('peerDependencies 区间覆盖 0.1.5-rc.1 / 0.1.7-rc.1 / 0.2.0-rc.1 / 0.2.1-rc.2 / 0.2.2-rc.1（dsh + dsh-settings 双 peer，且 dsh peer 与 engines 一致）')
+
+// ---------------------------------------------------------------------------
+// 3b. 宿主真闸函数（0.2.2 适配轮新增，2026-11-06）
+// ---------------------------------------------------------------------------
+// 复刻判定器只能证明「我理解的区间语义」；这里直接 import 宿主发包里的
+// evaluatePluginCompatibility，对真 manifest 判一次——它才是决定加载的那段代码
+// （0.2.2-rc.1 实装：dsh-app-boot/lib/index.js:1129）。返回 undefined = 达标。
+// 找不到发包时显式打印跳过原因（静默 SKIP 与假绿同样有害）。
+function loadHostGate() {
+  const candidates = ['@deepseek-ai/dsh-app-boot', '@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-app-boot']
+  for (const candidate of candidates) {
+    try { return req(candidate) } catch { /* next */ }
+  }
+  try {
+    const pnpmDir = join(root, 'node_modules', '.pnpm')
+    for (const entry of readdirSync(pnpmDir)) {
+      if (!entry.startsWith('@deepseek-ai+dsh-app-boot@')) continue
+      try { return req(join(pnpmDir, entry, 'node_modules', '@deepseek-ai', 'dsh-app-boot')) } catch { /* next */ }
+    }
+  } catch { /* .pnpm absent */ }
+  return null
+}
+const gate = loadHostGate()
+if (gate && typeof gate.evaluatePluginCompatibility === 'function' && typeof gate.getDshRuntimeVersion === 'function') {
+  const runtime = gate.getDshRuntimeVersion()
+  assert.equal(runtime, pkg.version, '安装的宿主发包版本必须等于 package.json 版本号（否则测的就是别的宿主）')
+  assert.equal(gate.evaluatePluginCompatibility(pkg, {}, runtime), undefined, '宿主真闸（evaluatePluginCompatibility）拒绝了本 manifest')
+  // 真负例：同一个真闸对 0.3.0 必须拒——否则说明这条检查恒绿、什么也没验。
+  const rejected = gate.evaluatePluginCompatibility(pkg, {}, '0.3.0')
+  assert.ok(rejected && rejected.requirements, '反证失败：宿主真闸居然放行 0.3.0（检查恒绿，无效）')
+  // 记录的因果：旧五段区间在宿主闸下**同样放行** 0.2.2-rc.1 —— 所以补段修的是
+  // pnpm 严格模式，不是加载闸。这条断言把因果钉在测试里，别再照抄成「加载被拒」。
+  const oldManifest = {
+    ...pkg,
+    peerDependencies: { ...pkg.peerDependencies, '@deepseek-ai/dsh': OLD_FIVE_CLAUSE, '@deepseek-ai/dsh-settings': OLD_FIVE_CLAUSE },
+    dsh: { ...pkg.dsh, engines: { dsh: OLD_FIVE_CLAUSE } }
+  }
+  assert.equal(gate.evaluatePluginCompatibility(oldManifest, {}, runtime), undefined, '旧五段区间本应通过宿主闸（上界预发布被 includePrerelease 绕过）——本条断言防「把本轮写成加载被拒」')
+  ok('宿主真闸函数判 PASS（runtime=' + runtime + '）；真负例 0.3.0 被拒；旧区间在宿主闸下同样 PASS（故补段=pnpm 严格模式）')
+} else {
+  ok('宿主 dsh-app-boot 发包不可解析 → 跳过真闸检查（复刻判定器已在第 3 节覆盖；如需恢复：pnpm install 后 .pnpm 下应有 @deepseek-ai+dsh-app-boot@0.2.2-rc.1）')
+}
 
 // ---------------------------------------------------------------------------
 // 4. apply 端到端：真入口 + 最小桩，断言默认语义（未配置 = 不注入任何提示词）
